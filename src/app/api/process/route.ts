@@ -1,0 +1,94 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  parseTripText,
+  transcribeHandwritingFromBuffer,
+  correctTripLineDescriptions,
+} from "invoice-assistant";
+import type { VisionProvider } from "invoice-assistant";
+import { loadServerEnv } from "@/lib/loadEnv";
+
+export const runtime = "nodejs";
+export const maxDuration = 120;
+
+function isTxtName(name: string): boolean {
+  return /\.txt$/i.test(name);
+}
+
+function isImageMime(mime: string): boolean {
+  return /^image\/(jpeg|png|webp|gif)$/i.test(mime.split(";")[0]?.trim() ?? "");
+}
+
+export async function POST(req: NextRequest) {
+  loadServerEnv();
+  try {
+    const formData = await req.formData();
+    const rawTextField = formData.get("rawText");
+    const file = formData.get("file");
+    const provider = (formData.get("provider") as string) || "gemini";
+    const fixNames = formData.get("fixNames") === "true";
+    const fixNamesWeb = formData.get("fixNamesWeb") === "true";
+    const userInstructions = formData.get("userInstructions")?.toString() || undefined;
+
+    let text: string;
+
+    if (file instanceof File && file.size > 0) {
+      const buf = Buffer.from(await file.arrayBuffer());
+      const name = file.name || "";
+      if (isTxtName(name) || file.type === "text/plain") {
+        text = buf.toString("utf8");
+      } else if (isImageMime(file.type)) {
+        text = await transcribeHandwritingFromBuffer({
+          buffer: buf,
+          mimeType: file.type,
+          provider: provider as VisionProvider,
+        });
+      } else {
+        return NextResponse.json(
+          {
+            error:
+              "Podporované jsou .txt nebo obrázek (JPEG, PNG, WebP, GIF).",
+          },
+          { status: 400 },
+        );
+      }
+    } else if (typeof rawTextField === "string" && rawTextField.trim()) {
+      text = rawTextField;
+    } else {
+      return NextResponse.json(
+        { error: "Vlož text podkladu nebo nahraj soubor." },
+        { status: 400 },
+      );
+    }
+
+    let parsed = parseTripText(text);
+
+    if (fixNames) {
+      const key = process.env.GEMINI_API_KEY;
+      if (!key?.trim()) {
+        return NextResponse.json(
+          { error: "Pro korekci názvů nastav GEMINI_API_KEY v .env.local." },
+          { status: 400 },
+        );
+      }
+      const corrected = await correctTripLineDescriptions(parsed.lines, {
+        apiKey: key,
+        model: process.env.GEMINI_MODEL,
+        useWebSearch: fixNamesWeb,
+        rawTranscript: text,
+        userInstructions,
+      });
+      parsed = {
+        lines: corrected,
+        sumBase:
+          Math.round(
+            corrected.reduce((s, t) => s + t.baseAmount, 0) * 100,
+          ) / 100,
+      };
+    }
+
+    return NextResponse.json({ rawTranscript: text, parsed });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
