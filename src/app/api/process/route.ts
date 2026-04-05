@@ -3,6 +3,7 @@ import {
   parseTripText,
   transcribeHandwritingFromBuffer,
   correctTripLineDescriptions,
+  correctTripLineDescriptionsDeepSeek,
 } from "invoice-assistant";
 import type { VisionProvider } from "invoice-assistant";
 import { extractTextFromPdfBuffer } from "@/lib/extractPdfText";
@@ -34,6 +35,8 @@ export async function POST(req: NextRequest) {
     const provider = (formData.get("provider") as string) || "gemini";
     const fixNames = formData.get("fixNames") === "true";
     const fixNamesWeb = formData.get("fixNamesWeb") === "true";
+    const fixNamesProvider =
+      (formData.get("fixNamesProvider") as string) || "gemini";
     const userInstructions = formData.get("userInstructions")?.toString() || undefined;
 
     let text: string;
@@ -86,20 +89,41 @@ export async function POST(req: NextRequest) {
     let parsed = parseTripText(text);
 
     if (fixNames) {
-      const key = process.env.GEMINI_API_KEY;
-      if (!key?.trim()) {
-        return NextResponse.json(
-          { error: "Pro korekci názvů nastav GEMINI_API_KEY v .env.local." },
-          { status: 400 },
-        );
+      let corrected;
+      if (fixNamesProvider === "deepseek") {
+        const key = process.env.DEEPSEEK_API_KEY;
+        if (!key?.trim()) {
+          return NextResponse.json(
+            {
+              error:
+                "Pro korekci přes DeepSeek nastav DEEPSEEK_API_KEY v .env (viz .env.local.example).",
+            },
+            { status: 400 },
+          );
+        }
+        corrected = await correctTripLineDescriptionsDeepSeek(parsed.lines, {
+          apiKey: key,
+          model: process.env.DEEPSEEK_MODEL,
+          baseUrl: process.env.DEEPSEEK_API_BASE,
+          rawTranscript: text,
+          userInstructions,
+        });
+      } else {
+        const key = process.env.GEMINI_API_KEY;
+        if (!key?.trim()) {
+          return NextResponse.json(
+            { error: "Pro korekci názvů nastav GEMINI_API_KEY v .env." },
+            { status: 400 },
+          );
+        }
+        corrected = await correctTripLineDescriptions(parsed.lines, {
+          apiKey: key,
+          model: process.env.GEMINI_MODEL,
+          useWebSearch: fixNamesWeb,
+          rawTranscript: text,
+          userInstructions,
+        });
       }
-      const corrected = await correctTripLineDescriptions(parsed.lines, {
-        apiKey: key,
-        model: process.env.GEMINI_MODEL,
-        useWebSearch: fixNamesWeb,
-        rawTranscript: text,
-        userInstructions,
-      });
       parsed = {
         lines: corrected,
         sumBase:
