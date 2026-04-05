@@ -5,6 +5,7 @@ import {
   correctTripLineDescriptions,
 } from "invoice-assistant";
 import type { VisionProvider } from "invoice-assistant";
+import { extractTextFromPdfBuffer } from "@/lib/extractPdfText";
 import { loadServerEnv } from "@/lib/loadEnv";
 
 export const runtime = "nodejs";
@@ -16,6 +17,12 @@ function isTxtName(name: string): boolean {
 
 function isImageMime(mime: string): boolean {
   return /^image\/(jpeg|png|webp|gif)$/i.test(mime.split(";")[0]?.trim() ?? "");
+}
+
+function isPdfFile(name: string, mime: string): boolean {
+  if (/\.pdf$/i.test(name)) return true;
+  const m = mime.split(";")[0]?.trim() ?? "";
+  return m === "application/pdf";
 }
 
 export async function POST(req: NextRequest) {
@@ -36,6 +43,8 @@ export async function POST(req: NextRequest) {
       const name = file.name || "";
       if (isTxtName(name) || file.type === "text/plain") {
         text = buf.toString("utf8");
+      } else if (isPdfFile(name, file.type)) {
+        text = await extractTextFromPdfBuffer(buf);
       } else if (isImageMime(file.type)) {
         text = await transcribeHandwritingFromBuffer({
           buffer: buf,
@@ -46,7 +55,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
           {
             error:
-              "Podporované jsou .txt nebo obrázek (JPEG, PNG, WebP, GIF).",
+              "Podporované jsou .txt, PDF, nebo obrázek (JPEG, PNG, WebP, GIF).",
           },
           { status: 400 },
         );

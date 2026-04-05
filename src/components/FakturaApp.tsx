@@ -196,10 +196,12 @@ export default function FakturaApp() {
 
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
               <label className="flex-1 space-y-2">
-                <span className="text-sm text-zinc-400">Nebo soubor (.txt / obrázek)</span>
+                <span className="text-sm text-zinc-400">
+                  Nebo soubor (.txt / PDF / obrázek)
+                </span>
                 <input
                   type="file"
-                  accept=".txt,text/plain,image/jpeg,image/png,image/webp,image/gif"
+                  accept=".txt,.pdf,text/plain,application/pdf,image/jpeg,image/png,image/webp,image/gif"
                   className="block w-full text-sm text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-1.5 file:text-zinc-200"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
