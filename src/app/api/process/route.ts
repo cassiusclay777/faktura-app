@@ -44,7 +44,21 @@ export async function POST(req: NextRequest) {
       if (isTxtName(name) || file.type === "text/plain") {
         text = buf.toString("utf8");
       } else if (isPdfFile(name, file.type)) {
-        text = await extractTextFromPdfBuffer(buf);
+        let extracted = "";
+        try {
+          extracted = await extractTextFromPdfBuffer(buf);
+        } catch {
+          extracted = "";
+        }
+        if (extracted) {
+          text = extracted;
+        } else {
+          text = await transcribeHandwritingFromBuffer({
+            buffer: buf,
+            mimeType: "application/pdf",
+            provider: provider as VisionProvider,
+          });
+        }
       } else if (isImageMime(file.type)) {
         text = await transcribeHandwritingFromBuffer({
           buffer: buf,

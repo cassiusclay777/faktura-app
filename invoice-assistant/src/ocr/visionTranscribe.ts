@@ -32,6 +32,12 @@ async function transcribeWithProvider(
   base64: string,
   provider: VisionProvider,
 ): Promise<string> {
+  const m = mimeType.split(";")[0]?.trim().toLowerCase() ?? mimeType;
+  if (m === "application/pdf" && provider === "ollama") {
+    throw new Error(
+      "Skenované PDF (bez textové vrstvy) přes Ollama nepodporujeme – v UI zvol Gemini, nebo nahraj stránku jako obrázek.",
+    );
+  }
   if (provider === "gemini") {
     const apiKey = env("GEMINI_API_KEY");
     if (!apiKey) {

@@ -23,12 +23,15 @@ export function loadImageAsBase64(imagePath: string): { mimeType: string; base64
   return { mimeType, base64: buf.toString("base64") };
 }
 
-/** Pro upload z webu (Buffer + MIME z multipart). */
+/** Pro upload z webu (Buffer + MIME z multipart). Podporuje i `application/pdf` (Gemini). */
 export function loadImageBufferAsBase64(
   buffer: Buffer,
   mimeType: string,
 ): { mimeType: string; base64: string } {
   const normalized = mimeType.split(";")[0]?.trim().toLowerCase() ?? mimeType;
+  if (normalized === "application/pdf") {
+    return { mimeType: "application/pdf", base64: buffer.toString("base64") };
+  }
   if (!ALLOWED_MIMES.has(normalized)) {
     throw new Error(
       `Nepodporovaný MIME typ obrázku: ${mimeType}. Použij JPEG, PNG, WebP nebo GIF.`,
