@@ -1,22 +1,27 @@
 import { config } from "dotenv";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 let loaded = false;
 
+/** Kořen `faktura-app` (složka s `package.json`), nezávisle na `process.cwd()`. */
+function projectRoot(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+}
+
 /**
- * Next.js načítá jen `.env*` v kořeni aplikace.
- * Volitelně i `invoice-assistant/.env` (sdílené klíče s CLI balíčkem).
- * Pořadí: invoice-assistant → `.env` → `.env.local` (přepíše).
+ * Doplní `process.env` ze souborů v kořeni repa (vedle toho, co už načte Next.js).
+ * Pořadí: `invoice-assistant/.env` → `.env` → `.env.local` (každý další přepíše).
  */
 export function loadServerEnv(): void {
   if (loaded) return;
   loaded = true;
-  const cwd = process.cwd();
+  const root = projectRoot();
   const paths = [
-    path.join(cwd, "invoice-assistant", ".env"),
-    path.join(cwd, ".env"),
-    path.join(cwd, ".env.local"),
+    path.join(root, "invoice-assistant", ".env"),
+    path.join(root, ".env"),
+    path.join(root, ".env.local"),
   ];
   for (const p of paths) {
     if (existsSync(p)) {
