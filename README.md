@@ -35,7 +35,7 @@ Otevři [http://localhost:3000](http://localhost:3000).
 ## Konfigurace
 
 - **Textový podklad (.txt nebo vložený text)** – API klíče nepotřebuješ.
-- **PDF s textovou vrstvou** – stejně bez klíčů; čistý sken (jen obrázky stránek) nepůjde – použij foto nebo OCR přes Gemini níže.
+- **PDF** – nejdřív se čte textová vrstva (bez klíče). Je-li to sken bez textu, použije se **Gemini** (`GEMINI_API_KEY`) a celé PDF se pošle do modelu jako dokument. Ollama sken PDF neumí – nahraj PNG/JPEG nebo přepni na Gemini.
 - **Foto podkladu** – `GEMINI_API_KEY` v `.env.local` (Gemini), nebo lokální Ollama + `OLLAMA_VISION_MODEL`.
 - **Korekce názvů** – vyžaduje `GEMINI_API_KEY`; volitelně „+ web“ (Google Search tool).
 
