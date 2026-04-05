@@ -2,17 +2,22 @@
   "name": "faktura-app",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "npm --prefix invoice-assistant run test"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4",
     "dotenv": "^17.3.1",
     "invoice-assistant": "file:./invoice-assistant",
     "next": "15.5.14",
+    "pdf-parse": "^1.1.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "tailwindcss": "^4",
@@ -21,9 +26,12 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@types/node": "20.19.37",
+    "@types/pdf-parse": "^1.1.5",
     "@types/react": "19.2.14",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.5.14"
+    "eslint-config-next": "15.5.14",
+    "globals": "^17.4.0",
+    "picocolors": "^1.1.1"
   }
 }

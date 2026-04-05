@@ -14,16 +14,21 @@
   "scripts": {
     "prepare": "npm run build",
     "build": "tsc",
+    "test": "vitest run",
     "parse": "tsx src/index.ts",
     "parse:sample": "tsx src/index.ts sample-podklad.txt"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
-    "@types/node": "^22.10.0",
-    "dotenv": "^16.4.5",
-    "typescript": "^5.7.0"
+    "@google/generative-ai": "^0.24.1",
+    "dotenv": "^17.3.1",
+    "typescript": "5.9.3"
   },
   "devDependencies": {
-    "tsx": "^4.19.0"
+    "@types/node": "20.19.37",
+    "tsx": "^4.19.0",
+    "vitest": "^3.2.4"
   }
 }
