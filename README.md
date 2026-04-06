@@ -20,7 +20,7 @@ Server načítá v tomto pořadí (pozdější přepíše dřívější):
 
 Stačí mít `GEMINI_API_KEY` (a případně Ollama), pro korekci přes DeepSeek navíc **`DEEPSEEK_API_KEY`**, v **`.env`** nebo **`.env.local`** – případně v `invoice-assistant/.env`.
 
-Implementace: [`src/lib/loadEnv.ts`](src/lib/loadEnv.ts) – volá se při startu serveru ([`instrumentation`](src/instrumentation.ts)) a znovu na začátku [`/api/process`](src/app/api/process/route.ts).
+Implementace: [`src/lib/loadEnv.ts`](src/lib/loadEnv.ts) – volá se při načtení a na začátku požadavku v [`/api/process`](src/app/api/process/route.ts) (Node runtime).
 
 ## Spuštění
 
