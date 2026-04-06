@@ -1,0 +1,9 @@
+{
+    "recommendations": [
+        "firefox-devtools.vscode-firefox-debug",
+        "msjsdiag.debugger-for-chrome",
+        "davidanson.vscode-markdownlint",
+        "redhat.vscode-yaml",
+        "wakatime.vscode-wakatime"
+    ]
+}
