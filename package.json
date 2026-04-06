@@ -6,6 +6,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\"",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
