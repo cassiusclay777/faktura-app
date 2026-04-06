@@ -9,6 +9,8 @@ import type { VisionProvider } from "invoice-assistant";
 import { extractTextFromPdfBuffer } from "@/lib/extractPdfText";
 import { loadServerEnv } from "@/lib/loadEnv";
 
+loadServerEnv();
+
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
@@ -96,7 +98,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json(
             {
               error:
-                "Pro korekci přes DeepSeek nastav DEEPSEEK_API_KEY v .env (viz .env.local.example).",
+                "Pro korekci přes DeepSeek nastav DEEPSEEK_API_KEY v .env (viz .env.example).",
             },
             { status: 400 },
           );
@@ -112,7 +114,10 @@ export async function POST(req: NextRequest) {
         const key = process.env.GEMINI_API_KEY;
         if (!key?.trim()) {
           return NextResponse.json(
-            { error: "Pro korekci názvů nastav GEMINI_API_KEY v .env." },
+            {
+              error:
+                "Pro korekci názvů nastav GEMINI_API_KEY v .env (viz .env.example).",
+            },
             { status: 400 },
           );
         }

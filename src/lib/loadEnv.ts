@@ -11,7 +11,9 @@ function projectRoot(): string {
 }
 
 /**
- * Doplní `process.env` ze souborů v kořeni repa (vedle toho, co už načte Next.js).
+ * Doplní `process.env` ze souborů v kořeni `faktura-app` (vedle toho, co už načte Next.js).
+ * Pro API používají stejné proměnné i **Gemini** (`GEMINI_API_KEY`, `GEMINI_MODEL`) a **DeepSeek** (`DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_API_BASE`).
+ *
  * Pořadí: `invoice-assistant/.env` → `.env` → `.env.local` (každý další přepíše).
  */
 export function loadServerEnv(): void {
