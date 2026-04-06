@@ -466,14 +466,21 @@ export default function FakturaApp() {
                 </label>
               </div>
               <div className="grid gap-4 sm:grid-cols-2 mb-4">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={fixNamesWeb}
-                    disabled={fixNamesProvider === "deepseek"}
-                    onChange={(e) => setFixNamesWeb(e.target.checked)}
-                  />
-                  Vyhledávat na webu (jen Gemini)
+                <label
+                  className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-2"
+                  title="Gemini: Google Search. DeepSeek: nástroj web_search — doporučeno TAVILY_API_KEY, jinak DuckDuckGo."
+                >
+                  <span className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={fixNamesWeb}
+                      onChange={(e) => setFixNamesWeb(e.target.checked)}
+                    />
+                    Vyhledávat na webu
+                  </span>
+                  <span className="text-xs text-zinc-600">
+                    Gemini: Google Search · DeepSeek: Tavily (volitelný klíč) nebo DuckDuckGo
+                  </span>
                 </label>
               </div>
               <label className="block space-y-1 mb-4">

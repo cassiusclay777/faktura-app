@@ -5,6 +5,28 @@ import {
   mergeCorrectedDescriptions,
 } from "./correctNamesCommon.js";
 
+const WEB_SEARCH_TOOLS: unknown[] = [
+  {
+    type: "function",
+    function: {
+      name: "web_search",
+      description:
+        "Vyhledá na webu informace pro ověření správného zápisu českého názvu firmy, obce nebo místa.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description:
+              "Krátký vyhledávací dotaz v češtině, např. „Dopravní stavby Brno s.r.o.“ nebo „obec Branišovice okres Vyškov“.",
+          },
+        },
+        required: ["query"],
+      },
+    },
+  },
+];
+
 export type CorrectNamesDeepSeekOptions = {
   apiKey: string;
   /** např. deepseek-chat */
@@ -13,7 +35,26 @@ export type CorrectNamesDeepSeekOptions = {
   baseUrl?: string;
   rawTranscript?: string;
   userInstructions?: string;
+  /** Nástroj web_search + smyčka; vyžaduje `webSearch` */
+  useWebSearch?: boolean;
+  /** Implementace vyhledávání (např. Tavily na serveru) */
+  webSearch?: (query: string) => Promise<string>;
 };
+
+type ChatMessage =
+  | { role: "user"; content: string }
+  | {
+      role: "assistant";
+      content: string | null;
+      tool_calls?: Array<{
+        id: string;
+        type?: string;
+        function: { name: string; arguments: string };
+      }>;
+    }
+  | { role: "tool"; tool_call_id: string; content: string };
+
+const MAX_TOOL_ROUNDS = 14;
 
 /**
  * Korekce názvů přes DeepSeek API (OpenAI-kompatibilní chat).
@@ -27,22 +68,136 @@ export async function correctTripLineDescriptionsDeepSeek(
   const base = (opts.baseUrl ?? "https://api.deepseek.com").replace(/\/$/, "");
   const model = opts.model ?? "deepseek-chat";
 
+  if (opts.useWebSearch && !opts.webSearch) {
+    throw new Error(
+      "DeepSeek vyhledávání na webu vyžaduje nastavený handler webSearch (server).",
+    );
+  }
+
+  if (opts.useWebSearch && opts.webSearch) {
+    return correctWithWebTools(lines, opts, base, model);
+  }
+
   const userPrompt = buildCorrectNamesUserPrompt(lines, {
     useWebSearch: false,
+    useWebSearchTools: false,
     rawTranscript: opts.rawTranscript,
     userInstructions: opts.userInstructions,
   });
 
+  const text = await deepSeekChatOnce(base, model, opts.apiKey, [
+    { role: "user", content: userPrompt },
+  ]);
+
+  return parseCorrectionJson(lines, text);
+}
+
+async function correctWithWebTools(
+  lines: TripLine[],
+  opts: CorrectNamesDeepSeekOptions,
+  base: string,
+  model: string,
+): Promise<TripLine[]> {
+  const userPrompt = buildCorrectNamesUserPrompt(lines, {
+    useWebSearch: false,
+    useWebSearchTools: true,
+    rawTranscript: opts.rawTranscript,
+    userInstructions: opts.userInstructions,
+  });
+
+  const messages: ChatMessage[] = [{ role: "user", content: userPrompt }];
+  const webSearch = opts.webSearch!;
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const msg = await deepSeekChatMessage(base, model, opts.apiKey, messages, {
+      tools: WEB_SEARCH_TOOLS,
+      tool_choice: "auto",
+    });
+
+    if (msg.tool_calls?.length) {
+      messages.push({
+        role: "assistant",
+        content: msg.content ?? null,
+        tool_calls: msg.tool_calls,
+      });
+      for (const tc of msg.tool_calls) {
+        let snippet = "(Neznámý nástroj.)";
+        if (tc.function?.name === "web_search") {
+          let args: { query?: string };
+          try {
+            args = JSON.parse(tc.function.arguments || "{}") as {
+              query?: string;
+            };
+          } catch {
+            args = {};
+          }
+          const q = typeof args.query === "string" ? args.query.trim() : "";
+          snippet = q
+            ? (await webSearch(q)).slice(0, 14_000)
+            : "(Prázdný dotaz pro web_search.)";
+        }
+        messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: snippet,
+        });
+      }
+      continue;
+    }
+
+    const text = msg.content;
+    if (!text?.trim()) {
+      throw new Error("DeepSeek (korekce názvů) vrátil prázdnou odpověď.");
+    }
+    return parseCorrectionJson(lines, text);
+  }
+
+  throw new Error(
+    "DeepSeek: překročen limit kol s web_search — zkus znovu nebo vypni vyhledávání.",
+  );
+}
+
+async function deepSeekChatOnce(
+  base: string,
+  model: string,
+  apiKey: string,
+  messages: ChatMessage[],
+): Promise<string> {
+  const msg = await deepSeekChatMessage(base, model, apiKey, messages, {});
+  const text = msg.content;
+  if (!text?.trim()) {
+    throw new Error("DeepSeek (korekce názvů) vrátil prázdnou odpověď.");
+  }
+  return text;
+}
+
+type DeepSeekMsg = {
+  content: string | null;
+  tool_calls?: Array<{
+    id: string;
+    type?: string;
+    function: { name: string; arguments: string };
+  }>;
+};
+
+async function deepSeekChatMessage(
+  base: string,
+  model: string,
+  apiKey: string,
+  messages: ChatMessage[],
+  extras: Record<string, unknown>,
+): Promise<DeepSeekMsg> {
   const res = await fetch(`${base}/v1/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${opts.apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model,
-      messages: [{ role: "user", content: userPrompt }],
+      messages,
       temperature: 0.2,
+      ...extras,
     }),
   });
 
@@ -54,13 +209,16 @@ export async function correctTripLineDescriptionsDeepSeek(
   }
 
   const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{ message?: DeepSeekMsg }>;
   };
-  const text = data.choices?.[0]?.message?.content;
-  if (!text?.trim()) {
-    throw new Error("DeepSeek (korekce názvů) vrátil prázdnou odpověď.");
+  const msg = data.choices?.[0]?.message;
+  if (!msg) {
+    throw new Error("DeepSeek API vrátilo odpověď bez message.");
   }
+  return msg;
+}
 
+function parseCorrectionJson(lines: TripLine[], text: string): TripLine[] {
   let parsed: unknown;
   try {
     parsed = extractJsonArray(text);
@@ -69,6 +227,5 @@ export async function correctTripLineDescriptionsDeepSeek(
       `Nepodařilo se zparsovat JSON z korekce (DeepSeek): ${(e as Error).message}`,
     );
   }
-
   return mergeCorrectedDescriptions(lines, parsed);
 }

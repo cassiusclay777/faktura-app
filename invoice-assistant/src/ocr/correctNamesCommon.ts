@@ -15,8 +15,16 @@ export const CORRECT_NAMES_WEB_SUFFIX = `
 K dispozici máš vyhledávání na webu – použij ho k ověření názvů firem a obcí v ČR, kde je přepis nejasný.
 `;
 
+/** Gemini: Google Search grounding; DeepSeek: samostatná větev s tool calling – viz CORRECT_NAMES_WEB_TOOLS_SUFFIX */
+export const CORRECT_NAMES_WEB_TOOLS_SUFFIX = `
+K ověření přepisů máš nástroj web_search(query). Volej ho s konkrétními českými dotazy (název firmy, obec, …), pokud potřebuješ ověřit zápis. Výsledky použij jen k opravě názvů v popisech. Až skončíš, vrať POUZE požadované JSON pole — žádný jiný text ani komentáře.
+`;
+
 export type CorrectNamesPromptOptions = {
+  /** Gemini: text pro Google Search grounding */
   useWebSearch: boolean;
+  /** DeepSeek (+ tool web_search): jiný suffix než u Gemini */
+  useWebSearchTools?: boolean;
   rawTranscript?: string;
   userInstructions?: string;
 };
@@ -32,7 +40,11 @@ export function buildCorrectNamesUserPrompt(
 
   return [
     CORRECT_NAMES_PROMPT,
-    opts.useWebSearch ? CORRECT_NAMES_WEB_SUFFIX : "",
+    opts.useWebSearchTools
+      ? CORRECT_NAMES_WEB_TOOLS_SUFFIX
+      : opts.useWebSearch
+        ? CORRECT_NAMES_WEB_SUFFIX
+        : "",
     opts.userInstructions
       ? `\nDoplňkové instrukce od uživatele:\n${opts.userInstructions}\n`
       : "",

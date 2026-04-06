@@ -8,6 +8,7 @@ import {
 import type { VisionProvider } from "invoice-assistant";
 import { extractTextFromPdfBuffer } from "@/lib/extractPdfText";
 import { loadServerEnv } from "@/lib/loadEnv";
+import { searchWebForCorrection } from "@/lib/webSearch";
 
 loadServerEnv();
 
@@ -109,6 +110,8 @@ export async function POST(req: NextRequest) {
           baseUrl: process.env.DEEPSEEK_API_BASE,
           rawTranscript: text,
           userInstructions,
+          useWebSearch: fixNamesWeb,
+          webSearch: fixNamesWeb ? searchWebForCorrection : undefined,
         });
       } else {
         const key = process.env.GEMINI_API_KEY;
