@@ -4,6 +4,7 @@
         "msjsdiag.debugger-for-chrome",
         "davidanson.vscode-markdownlint",
         "redhat.vscode-yaml",
-        "wakatime.vscode-wakatime"
+        "wakatime.vscode-wakatime",
+        "localstack.localstack"
     ]
 }
