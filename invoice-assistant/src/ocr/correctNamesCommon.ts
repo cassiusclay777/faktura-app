@@ -11,6 +11,25 @@ Pravidla:
 
 `;
 
+/** Referenční styl řádků popisu jako na vydané faktuře z iDokladu (vzorová faktura uživatele). */
+export const CORRECT_NAMES_IDOKLAD_STYLE_BLOCK = `
+Styl výstupu – přizpůsob se zápisu popisů řádků jako na vydané faktuře z iDokladu (stejná typografie právních forem, mezer a oddělovačů).
+
+Povinná pravidla stylu:
+- Právní formy piš konzistentně jako na faktuře: „s.r.o.“, „a.s.“, „spol. s r.o.“ – s tečkami a mezerami jako v ukázkách níže.
+- Mezi více zastávkami nebo firmami používej „ + “ (mezera, plus, mezera).
+- Čárky u firemních názvů a sídel zachovej v logickém pořadí (např. „NÁZEV, město“).
+- Začátek řádku velkými písmeny (např. STŘELICE – … / VLKOŠ – …) nech ve stejném stylu jako ve vstupu, pokud tam je.
+- Koncový objem „… lt.“ ponech beze změny (stejné číslo jako ve vstupu).
+
+Ukázky formátu (inspirace – nepřepisuj jejich konkrétní data do jiného dne):
+- STŘELICE – TTS MĚNÍN (Top Trailer Servis s.r.o.) + ZEMAX ŠITBOŘICE, a.s. + SIGNUM, s.r.o., Hustopeče … lt.
+- STŘELICE – CROSS SPEED, s.r.o., Branišovice + Benale, Miroslav, Dukovany … lt.
+- VLKOŠ – ADOSA a.s., čerpací stanice Moutnice + A+S čerpací stanice Sokolnice + … lt.
+
+Výstupní popisy musí vypadat, jako by šly přímo do sloupce položky faktury v iDokladu.
+`.trim();
+
 export const CORRECT_NAMES_WEB_SUFFIX = `
 K dispozici máš vyhledávání na webu – použij ho k ověření názvů firem a obcí v ČR, kde je přepis nejasný.
 `;
@@ -27,7 +46,23 @@ export type CorrectNamesPromptOptions = {
   useWebSearchTools?: boolean;
   rawTranscript?: string;
   userInstructions?: string;
+  /**
+   * Vestavěný blok stylu iDoklad + ukázky; výchozí zapnuto (`undefined` = zapnuto).
+   * Vypni jen explicitně `false`.
+   */
+  idokladStyle?: boolean;
+  /** Nahradí vestavěný blok; max. délku řeže volající */
+  styleReference?: string;
 };
+
+function buildIdokladStyleFragment(opts: CorrectNamesPromptOptions): string {
+  if (opts.idokladStyle === false) return "";
+  const custom = opts.styleReference?.trim();
+  if (custom) {
+    return `\nStyl výstupu – vlastní vzor od uživatele (dodrž tento zápis):\n${custom}\n`;
+  }
+  return `\n${CORRECT_NAMES_IDOKLAD_STYLE_BLOCK}\n`;
+}
 
 export function buildCorrectNamesUserPrompt(
   lines: TripLine[],
@@ -40,6 +75,7 @@ export function buildCorrectNamesUserPrompt(
 
   return [
     CORRECT_NAMES_PROMPT,
+    buildIdokladStyleFragment(opts),
     opts.useWebSearchTools
       ? CORRECT_NAMES_WEB_TOOLS_SUFFIX
       : opts.useWebSearch

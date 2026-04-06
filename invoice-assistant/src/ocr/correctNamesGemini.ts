@@ -19,6 +19,9 @@ export type CorrectNamesOptions = {
   rawTranscript?: string;
   /** Vlastní instrukce od uživatele pro korekci (volitelně) */
   userInstructions?: string;
+  /** Styl řádků jako na vydané faktuře z iDokladu (vestavěný nebo vlastní vzor) */
+  idokladStyle?: boolean;
+  styleReference?: string;
 };
 
 /**
@@ -37,6 +40,8 @@ export async function correctTripLineDescriptions(
     useWebSearch: opts.useWebSearch,
     rawTranscript: opts.rawTranscript,
     userInstructions: opts.userInstructions,
+    idokladStyle: opts.idokladStyle,
+    styleReference: opts.styleReference,
   });
 
   const model = genAI.getGenerativeModel({

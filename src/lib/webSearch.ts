@@ -1,7 +1,9 @@
 /**
  * Vyhledávání pro DeepSeek tool `web_search` (korekce názvů).
- * API route volá tuto funkci jen když je nastavený TAVILY_API_KEY (DeepSeek + web).
- * DuckDuckGo zůstává jako fallback uvnitř, pokud by Tavily selhalo.
+ *
+ * Backends: **Perplexity Sonar** (`PERPLEXITY_API_KEY`) nebo **Tavily** (`TAVILY_API_KEY`).
+ * Volba: `DEEPSEEK_WEB_SEARCH_PROVIDER=perplexity|tavily` — jinak auto: Perplexity, pokud je klíč, jinak Tavily.
+ * DuckDuckGo jen jako nouzový fallback, pokud není nastaven žádný z backendů.
  */
 
 type TavilyResult = {
@@ -15,16 +17,88 @@ type TavilyResponse = {
   answer?: string;
 };
 
+/** Má smysl nabízet „web“ u korekce DeepSeek (alespoň jeden backend). */
+export function hasDeepSeekWebSearchCredentials(): boolean {
+  return !!(
+    process.env.PERPLEXITY_API_KEY?.trim() ||
+    process.env.TAVILY_API_KEY?.trim()
+  );
+}
+
+type WebBackend = "perplexity" | "tavily";
+
+function resolveWebBackend(): WebBackend | null {
+  const explicit = process.env.DEEPSEEK_WEB_SEARCH_PROVIDER?.trim().toLowerCase();
+  const pplx = process.env.PERPLEXITY_API_KEY?.trim();
+  const tavily = process.env.TAVILY_API_KEY?.trim();
+
+  if (explicit === "perplexity") {
+    if (pplx) return "perplexity";
+    if (tavily) return "tavily";
+    return null;
+  }
+  if (explicit === "tavily") {
+    if (tavily) return "tavily";
+    if (pplx) return "perplexity";
+    return null;
+  }
+  if (pplx) return "perplexity";
+  if (tavily) return "tavily";
+  return null;
+}
+
 export async function searchWebForCorrection(query: string): Promise<string> {
   const q = query.trim();
   if (!q) return "(Prázdný dotaz.)";
 
-  const tavilyKey = process.env.TAVILY_API_KEY?.trim();
-  if (tavilyKey) {
-    return tavilySearch(q, tavilyKey);
+  const backend = resolveWebBackend();
+  if (backend === "perplexity") {
+    return perplexitySearch(q, process.env.PERPLEXITY_API_KEY!.trim());
+  }
+  if (backend === "tavily") {
+    return tavilySearch(q, process.env.TAVILY_API_KEY!.trim());
   }
 
   return duckDuckGoInstantAnswer(q);
+}
+
+async function perplexitySearch(query: string, apiKey: string): Promise<string> {
+  const model =
+    process.env.PERPLEXITY_MODEL?.trim() || "sonar";
+  const res = await fetch("https://api.perplexity.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Krátce a věcně odpovídej česky. Pomáháš ověřit správný zápis českých názvů firem (IČO, sídlo), obcí a míst. Uveď preferovaný oficiální název nebo přepis, pokud je známý.",
+        },
+        { role: "user", content: query },
+      ],
+      temperature: 0.2,
+      max_tokens: 1200,
+    }),
+  });
+
+  if (!res.ok) {
+    const t = await res.text();
+    return `(Perplexity HTTP ${res.status}: ${t.slice(0, 400)})`;
+  }
+
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const text = data.choices?.[0]?.message?.content?.trim();
+  if (!text) {
+    return "(Perplexity: prázdná odpověď.)";
+  }
+  return text.slice(0, 14_000);
 }
 
 async function tavilySearch(query: string, apiKey: string): Promise<string> {
@@ -82,7 +156,7 @@ async function duckDuckGoInstantAnswer(query: string): Promise<string> {
     }
     return parts.length > 0
       ? parts.join("\n\n")
-      : "(DuckDuckGo: žádné shrnutí — zvaž nastavení TAVILY_API_KEY.)";
+      : "(DuckDuckGo: žádné shrnutí — nastav PERPLEXITY_API_KEY nebo TAVILY_API_KEY.)";
   } catch (e) {
     return `(DuckDuckGo chyba: ${e instanceof Error ? e.message : String(e)})`;
   }

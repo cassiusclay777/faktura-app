@@ -8,7 +8,10 @@ import {
 import type { VisionProvider } from "invoice-assistant";
 import { extractTextFromPdfBuffer } from "@/lib/extractPdfText";
 import { loadServerEnv } from "@/lib/loadEnv";
-import { searchWebForCorrection } from "@/lib/webSearch";
+import {
+  hasDeepSeekWebSearchCredentials,
+  searchWebForCorrection,
+} from "@/lib/webSearch";
 
 loadServerEnv();
 
@@ -41,6 +44,11 @@ export async function POST(req: NextRequest) {
     const fixNamesProvider =
       (formData.get("fixNamesProvider") as string) || "gemini";
     const userInstructions = formData.get("userInstructions")?.toString() || undefined;
+    const fixNamesIdokladStyle = formData.get("fixNamesIdokladStyle") !== "false";
+    const styleReferenceRaw = formData.get("styleReference")?.toString() ?? "";
+    const styleReference = styleReferenceRaw.trim()
+      ? styleReferenceRaw.trim().slice(0, 8000)
+      : undefined;
 
     let text: string;
 
@@ -92,16 +100,17 @@ export async function POST(req: NextRequest) {
     let parsed = parseTripText(text);
 
     if (fixNames) {
-      const tavilyKey = process.env.TAVILY_API_KEY?.trim();
-      /** DeepSeek nemá Google Search; web_search pouze s Tavily na serveru. */
+      /** DeepSeek nemá Google Search; web_search přes Perplexity nebo Tavily na serveru. */
       const deepSeekWebEnabled =
-        fixNamesWeb && fixNamesProvider === "deepseek" && !!tavilyKey;
+        fixNamesWeb &&
+        fixNamesProvider === "deepseek" &&
+        hasDeepSeekWebSearchCredentials();
 
-      if (fixNamesWeb && fixNamesProvider === "deepseek" && !tavilyKey) {
+      if (fixNamesWeb && fixNamesProvider === "deepseek" && !hasDeepSeekWebSearchCredentials()) {
         return NextResponse.json(
           {
             error:
-              "Pro vyhledávání na webu při korekci DeepSeek nastav TAVILY_API_KEY v .env (viz .env.example). Korekce přes Gemini používá Google Search bez Tavily.",
+              "Pro vyhledávání na webu při korekci DeepSeek nastav PERPLEXITY_API_KEY nebo TAVILY_API_KEY v .env (viz .env.example). Volitelně DEEPSEEK_WEB_SEARCH_PROVIDER=perplexity|tavily. Korekce přes Gemini používá Google Search.",
           },
           { status: 400 },
         );
@@ -127,6 +136,8 @@ export async function POST(req: NextRequest) {
           userInstructions,
           useWebSearch: deepSeekWebEnabled,
           webSearch: deepSeekWebEnabled ? searchWebForCorrection : undefined,
+          idokladStyle: fixNamesIdokladStyle,
+          styleReference,
         });
       } else {
         const key = process.env.GEMINI_API_KEY;
@@ -145,6 +156,8 @@ export async function POST(req: NextRequest) {
           useWebSearch: fixNamesWeb,
           rawTranscript: text,
           userInstructions,
+          idokladStyle: fixNamesIdokladStyle,
+          styleReference,
         });
       }
       parsed = {

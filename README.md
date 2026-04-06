@@ -2,7 +2,7 @@
 
 Next.js aplikace s vestavěným balíčkem **`invoice-assistant`**: načte textový podklad nebo fotku, parsuje řádky jízd, umožní doplnit dodavatele/odběratele a zobrazí **náhled faktury** vhodný k **tisku / uložení jako PDF** (prohlížeč → Tisk → Uložit jako PDF).
 
-**Do iDokladu se nic neposílá** – jde o vytvoření faktury jako dokumentu.
+**iDoklad:** v záložce Náhled můžeš **zkopírovat údaje do schránky** a **otevřít** [novou fakturu v iDokladu](https://app.idoklad.cz/IssuedInvoice/Create) – webové UI nepřijímá automatické předvyplnění z externí aplikace; plná integrace je přes [REST API + OAuth](https://api.idoklad.cz/) (viz `invoice-assistant/README.md`).
 
 ## Požadavky
 
@@ -37,7 +37,7 @@ Otevři [http://localhost:3000](http://localhost:3000).
 - **Textový podklad (.txt nebo vložený text)** – API klíče nepotřebuješ.
 - **PDF** – nejdřív se čte textová vrstva (bez klíče). Je-li to sken bez textu, použije se **Gemini** (`GEMINI_API_KEY`) a celé PDF se pošle do modelu jako dokument. Ollama sken PDF neumí – nahraj PNG/JPEG nebo přepni na Gemini.
 - **Foto podkladu** – `GEMINI_API_KEY` v `.env` nebo `.env.local` (Gemini), nebo lokální Ollama + `OLLAMA_VISION_MODEL`.
-- **Korekce názvů** – v záložce Faktura zvol **Gemini** (`GEMINI_API_KEY`, volitelně vyhledávání přes Google Search) nebo **DeepSeek** (`DEEPSEEK_API_KEY`, model default `deepseek-chat`). U DeepSeek je „Vyhledávat na webu“ dostupné jen s **`TAVILY_API_KEY`** (nástroj `web_search` na serveru). Vlastní instrukce v poli pod tím platí pro oba.
+- **Korekce názvů** – v záložce Faktura zvol **Gemini** (`GEMINI_API_KEY`, volitelně vyhledávání přes Google Search) nebo **DeepSeek** (`DEEPSEEK_API_KEY`, model default `deepseek-chat`). U DeepSeek je „Vyhledávat na webu“ se serverovým nástrojem `web_search` dostupné s **`PERPLEXITY_API_KEY`** (Sonar) a/nebo **`TAVILY_API_KEY`**; volitelně `DEEPSEEK_WEB_SEARCH_PROVIDER=perplexity|tavily` (viz `.env.example`). Vlastní instrukce v poli pod tím platí pro oba.
 
 Údaje o dodavateli v formuláři se ukládají do `localStorage` v prohlížeči.
 

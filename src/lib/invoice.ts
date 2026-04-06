@@ -15,8 +15,22 @@ export type EditableInvoiceLine = {
 export type InvoiceHeader = {
   supplierName: string;
   supplierIco: string;
+  /** Sídlo dodavatele */
   supplierAddress: string;
+  /** např. Převodem */
+  supplierPaymentMethod: string;
+  /** Popisek typu „Hlavní bankovní spojení“ */
+  supplierBankLabel: string;
+  /** Číslo účtu (např. 123456/0600) */
+  supplierAccountNumber: string;
+  supplierIban: string;
+  supplierSwift: string;
+  /** Název odběratele */
   customerName: string;
+  customerIco: string;
+  customerDic: string;
+  customerReliableVatPayer: boolean;
+  /** Sídlo odběratele */
   customerAddress: string;
   issueDate: string;
   dueDate: string;
@@ -28,7 +42,15 @@ export const emptyHeader = (): InvoiceHeader => ({
   supplierName: "",
   supplierIco: "",
   supplierAddress: "",
+  supplierPaymentMethod: "Převodem",
+  supplierBankLabel: "",
+  supplierAccountNumber: "",
+  supplierIban: "",
+  supplierSwift: "",
   customerName: "",
+  customerIco: "",
+  customerDic: "",
+  customerReliableVatPayer: false,
   customerAddress: "",
   issueDate: new Date().toISOString().slice(0, 10),
   dueDate: "",

@@ -39,6 +39,8 @@ export type CorrectNamesDeepSeekOptions = {
   useWebSearch?: boolean;
   /** Implementace vyhledávání (např. Tavily na serveru) */
   webSearch?: (query: string) => Promise<string>;
+  idokladStyle?: boolean;
+  styleReference?: string;
 };
 
 type ChatMessage =
@@ -83,6 +85,8 @@ export async function correctTripLineDescriptionsDeepSeek(
     useWebSearchTools: false,
     rawTranscript: opts.rawTranscript,
     userInstructions: opts.userInstructions,
+    idokladStyle: opts.idokladStyle,
+    styleReference: opts.styleReference,
   });
 
   const text = await deepSeekChatOnce(base, model, opts.apiKey, [
@@ -103,6 +107,8 @@ async function correctWithWebTools(
     useWebSearchTools: true,
     rawTranscript: opts.rawTranscript,
     userInstructions: opts.userInstructions,
+    idokladStyle: opts.idokladStyle,
+    styleReference: opts.styleReference,
   });
 
   const messages: ChatMessage[] = [{ role: "user", content: userPrompt }];

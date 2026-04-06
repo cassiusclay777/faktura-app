@@ -14,9 +14,14 @@ import {
   type InvoiceHeader,
 } from "@/lib/invoice";
 import { formatUnknownError } from "@/lib/formatUnknownError";
+import {
+  buildIdokladExportText,
+  IDOKLAD_ISSUED_INVOICE_CREATE_URL,
+} from "@/lib/idokladExport";
 import { readJsonResponse } from "@/lib/readJsonResponse";
 
 const HEADER_STORAGE_KEY = "faktura-invoice-header-v1";
+const AUTOFIX_STORAGE_KEY = "faktura-autofix-settings-v1";
 
 function loadHeader(): InvoiceHeader {
   if (typeof window === "undefined") return emptyHeader();
@@ -30,8 +35,43 @@ function loadHeader(): InvoiceHeader {
   }
 }
 
+type AutoFixSettings = {
+  enabled: boolean;
+  provider: "gemini" | "deepseek";
+  useWeb: boolean;
+  /** Popisy řádků ve stylu vydané faktury z iDokladu (vestavěný vzor nebo vlastní níže) */
+  idokladStyle: boolean;
+  styleReference: string;
+};
+
+function loadAutoFixSettings(): AutoFixSettings {
+  const defaults: AutoFixSettings = {
+    enabled: true,
+    provider: "gemini",
+    useWeb: true,
+    idokladStyle: true,
+    styleReference: "",
+  };
+  if (typeof window === "undefined") return defaults;
+  try {
+    const raw = localStorage.getItem(AUTOFIX_STORAGE_KEY);
+    if (!raw) return defaults;
+    const o = JSON.parse(raw) as Partial<AutoFixSettings>;
+    return { ...defaults, ...o };
+  } catch {
+    return defaults;
+  }
+}
+
 export default function FakturaApp() {
   const [header, setHeader] = useState<InvoiceHeader>(() => emptyHeader());
+  const [autoFixSettings, setAutoFixSettings] = useState<AutoFixSettings>(() => ({
+    enabled: true,
+    provider: "gemini",
+    useWeb: true,
+    idokladStyle: true,
+    styleReference: "",
+  }));
   const [lines, setLines] = useState<EditableInvoiceLine[]>([]);
   const [rawTranscript, setRawTranscript] = useState("");
   const [pasteText, setPasteText] = useState("");
@@ -48,23 +88,35 @@ export default function FakturaApp() {
   const [correcting, setCorrecting] = useState(false);
   const [showCorrection, setShowCorrection] = useState(false);
   /** Server má TAVILY_API_KEY — nutné pro DeepSeek + „Vyhledávat na webu“. */
-  const [tavilyConfigured, setTavilyConfigured] = useState<boolean | null>(
+  const [deepSeekWebSearchAvailable, setDeepSeekWebSearchAvailable] =
+    useState<boolean | null>(null);
+  const [idokladExportHint, setIdokladExportHint] = useState<string | null>(
     null,
   );
 
   useEffect(() => {
     setHeader(loadHeader());
+    setAutoFixSettings(loadAutoFixSettings());
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     void fetch("/api/config")
       .then((r) => r.json())
-      .then((data: { tavilyConfigured?: boolean }) => {
-        if (!cancelled) setTavilyConfigured(!!data.tavilyConfigured);
-      })
+      .then(
+        (data: {
+          deepSeekWebSearchConfigured?: boolean;
+          tavilyConfigured?: boolean;
+          perplexityConfigured?: boolean;
+        }) => {
+          const ok =
+            data.deepSeekWebSearchConfigured ??
+            !!(data.tavilyConfigured || data.perplexityConfigured);
+          if (!cancelled) setDeepSeekWebSearchAvailable(!!ok);
+        },
+      )
       .catch(() => {
-        if (!cancelled) setTavilyConfigured(false);
+        if (!cancelled) setDeepSeekWebSearchAvailable(false);
       });
     return () => {
       cancelled = true;
@@ -72,21 +124,48 @@ export default function FakturaApp() {
   }, []);
 
   useEffect(() => {
-    if (fixNamesProvider === "deepseek" && tavilyConfigured === false) {
+    if (fixNamesProvider === "deepseek" && deepSeekWebSearchAvailable === false) {
       setFixNamesWeb(false);
     }
-  }, [fixNamesProvider, tavilyConfigured]);
+  }, [fixNamesProvider, deepSeekWebSearchAvailable]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     localStorage.setItem(HEADER_STORAGE_KEY, JSON.stringify(header));
   }, [header]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(AUTOFIX_STORAGE_KEY, JSON.stringify(autoFixSettings));
+  }, [autoFixSettings]);
+
   const vatPercent = DEFAULT_VAT_PERCENT;
   const totals = useMemo(
     () => totalsFromLines(lines, vatPercent),
     [lines, vatPercent],
   );
+
+  const openIdokladCreate = useCallback(() => {
+    window.open(
+      IDOKLAD_ISSUED_INVOICE_CREATE_URL,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }, []);
+
+  const copyIdokladExport = useCallback(async () => {
+    const text = buildIdokladExportText(header, lines, vatPercent);
+    try {
+      await navigator.clipboard.writeText(text);
+      setIdokladExportHint("Údaje zkopírovány do schránky.");
+      window.setTimeout(() => setIdokladExportHint(null), 3500);
+    } catch {
+      setIdokladExportHint(
+        "Schránka nedostupná (oprávnění prohlížeče). Zkopíruj údaje ručně z náhledu.",
+      );
+      window.setTimeout(() => setIdokladExportHint(null), 5000);
+    }
+  }, [header, lines, vatPercent]);
 
   const processPodklad = useCallback(
     async (file: File | null) => {
@@ -111,10 +190,50 @@ export default function FakturaApp() {
           );
         }
         if (!data.parsed) throw new Error("Neočekávaná odpověď serveru.");
-        setRawTranscript(data.rawTranscript ?? "");
+        const rawText = data.rawTranscript ?? "";
         const parsedLines = tripLinesToEditable(data.parsed.lines);
+        setRawTranscript(rawText);
         setLines(parsedLines);
         setOriginalLines(parsedLines);
+
+        // Automatická korekce po uploadu obrázku/PDF
+        if (autoFixSettings.enabled && file && file.size > 0) {
+          setCorrecting(true);
+          try {
+            const fd2 = new FormData();
+            fd2.append("rawText", rawText);
+            fd2.append("provider", provider);
+            fd2.append("fixNames", "true");
+            fd2.append("fixNamesProvider", autoFixSettings.provider);
+            fd2.append("fixNamesWeb", String(autoFixSettings.useWeb));
+            fd2.append("fixNamesIdokladStyle", String(autoFixSettings.idokladStyle));
+            if (autoFixSettings.styleReference.trim()) {
+              fd2.append("styleReference", autoFixSettings.styleReference.trim());
+            }
+
+            const res2 = await fetch("/api/process", { method: "POST", body: fd2 });
+            const data2 = await readJsonResponse<{
+              error?: string;
+              parsed?: ParsedPodklad;
+            }>(res2);
+            if (!res2.ok) {
+              throw new Error(
+                data2.error ?? (res2.statusText || `HTTP ${res2.status}`),
+              );
+            }
+            if (data2.parsed) {
+              const correctedLines = tripLinesToEditable(data2.parsed.lines);
+              setLines(correctedLines);
+              setShowCorrection(true);
+            }
+          } catch (e) {
+            // Korekce selhala – necháme původní parsing
+            console.error("Auto-fix selhal:", e);
+          } finally {
+            setCorrecting(false);
+          }
+        }
+
         setTab("faktura");
       } catch (e) {
         setError(formatUnknownError(e));
@@ -122,7 +241,7 @@ export default function FakturaApp() {
         setLoading(false);
       }
     },
-    [pasteText, provider],
+    [pasteText, provider, autoFixSettings],
   );
 
   const runCorrection = useCallback(async () => {
@@ -137,6 +256,10 @@ export default function FakturaApp() {
       fd.append("fixNames", "true");
       fd.append("fixNamesProvider", fixNamesProvider);
       fd.append("fixNamesWeb", String(fixNamesWeb));
+      fd.append("fixNamesIdokladStyle", String(autoFixSettings.idokladStyle));
+      if (autoFixSettings.styleReference.trim()) {
+        fd.append("styleReference", autoFixSettings.styleReference.trim());
+      }
       if (userInstructions.trim()) fd.append("userInstructions", userInstructions.trim());
 
       const res = await fetch("/api/process", { method: "POST", body: fd });
@@ -164,6 +287,8 @@ export default function FakturaApp() {
     lines,
     rawTranscript,
     provider,
+    autoFixSettings.idokladStyle,
+    autoFixSettings.styleReference,
   ]);
 
   const updateLine = (id: string, patch: Partial<EditableInvoiceLine>) => {
@@ -272,6 +397,88 @@ export default function FakturaApp() {
               </label>
             </div>
 
+            <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+              <h3 className="mb-3 text-sm font-medium text-zinc-300">
+                Automatická oprava názvů (po uploadu)
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={autoFixSettings.enabled}
+                    onChange={(e) =>
+                      setAutoFixSettings((s) => ({ ...s, enabled: e.target.checked }))
+                    }
+                  />
+                  <span className="text-sm text-zinc-400">Zapnuto</span>
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-zinc-500">Model</span>
+                  <select
+                    value={autoFixSettings.provider}
+                    onChange={(e) =>
+                      setAutoFixSettings((s) => ({
+                        ...s,
+                        provider: e.target.value as "gemini" | "deepseek",
+                      }))
+                    }
+                    className="w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm"
+                  >
+                    <option value="gemini">Gemini + Google Search</option>
+                    <option value="deepseek">DeepSeek + web (Perplexity / Tavily)</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={autoFixSettings.useWeb}
+                    disabled={
+                      autoFixSettings.provider === "deepseek" &&
+                      (deepSeekWebSearchAvailable === null ||
+                        !deepSeekWebSearchAvailable)
+                    }
+                    onChange={(e) =>
+                      setAutoFixSettings((s) => ({ ...s, useWeb: e.target.checked }))
+                    }
+                  />
+                  <span
+                    className={
+                      autoFixSettings.provider === "deepseek" &&
+                      (deepSeekWebSearchAvailable === null ||
+                        !deepSeekWebSearchAvailable)
+                        ? "text-sm text-zinc-600"
+                        : "text-sm text-zinc-400"
+                    }
+                  >
+                    Web vyhledávání
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 sm:col-span-3">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 shrink-0"
+                    checked={autoFixSettings.idokladStyle}
+                    onChange={(e) =>
+                      setAutoFixSettings((s) => ({
+                        ...s,
+                        idokladStyle: e.target.checked,
+                      }))
+                    }
+                  />
+                  <span className="text-sm text-zinc-400">
+                    Styl řádků jako na faktuře z iDokladu (právní formy, „ + “ mezi
+                    zastávkami). Podrobnosti a vlastní vzor v záložce Faktura →
+                    Korekce názvů.
+                  </span>
+                </label>
+              </div>
+              <p className="mt-2 text-xs text-zinc-600">
+                Gemini: Google Search. DeepSeek + web:{" "}
+                <code className="text-zinc-500">PERPLEXITY_API_KEY</code> nebo{" "}
+                <code className="text-zinc-500">TAVILY_API_KEY</code> v .env.
+              </p>
+            </div>
+
             <button
               type="button"
               onClick={() => void processPodklad(null)}
@@ -289,46 +496,236 @@ export default function FakturaApp() {
               <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-zinc-500">
                 Dodavatel a odběratel
               </h2>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {(
-                  [
-                    ["supplierName", "Název dodavatele"],
-                    ["supplierIco", "IČO"],
-                    ["supplierAddress", "Adresa dodavatele (řádky oddělte Enterem)"],
-                    ["customerName", "Název odběratele"],
-                    ["customerAddress", "Adresa odběratele"],
-                    ["issueDate", "Datum vystavení"],
-                    ["dueDate", "Datum splatnosti"],
-                    ["variableSymbol", "Variabilní symbol"],
-                  ] as const
-                ).map(([key, label]) => (
-                  <label key={key} className="space-y-1 sm:col-span-2">
-                    <span className="text-xs text-zinc-500">{label}</span>
-                    {key === "supplierAddress" || key === "customerAddress" ? (
-                      <textarea
-                        value={header[key]}
-                        onChange={(e) =>
-                          setHeader((h) => ({ ...h, [key]: e.target.value }))
-                        }
-                        rows={3}
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
-                      />
-                    ) : (
-                      <input
-                        type={
-                          key === "issueDate" || key === "dueDate"
-                            ? "date"
-                            : "text"
-                        }
-                        value={header[key]}
-                        onChange={(e) =>
-                          setHeader((h) => ({ ...h, [key]: e.target.value }))
-                        }
-                        className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
-                      />
-                    )}
+              <div className="grid gap-8 lg:grid-cols-2">
+                <div className="space-y-4">
+                  <p className="text-xs font-semibold uppercase text-zinc-500">
+                    Dodavatel
+                  </p>
+                  <label className="block space-y-1">
+                    <span className="text-xs text-zinc-500">Název</span>
+                    <input
+                      value={header.supplierName}
+                      onChange={(e) =>
+                        setHeader((h) => ({ ...h, supplierName: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+                    />
                   </label>
-                ))}
+                  <label className="block space-y-1">
+                    <span className="text-xs text-zinc-500">IČ</span>
+                    <input
+                      value={header.supplierIco}
+                      onChange={(e) =>
+                        setHeader((h) => ({ ...h, supplierIco: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-xs text-zinc-500">Sídlo</span>
+                    <textarea
+                      value={header.supplierAddress}
+                      onChange={(e) =>
+                        setHeader((h) => ({
+                          ...h,
+                          supplierAddress: e.target.value,
+                        }))
+                      }
+                      rows={3}
+                      className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <div className="border-t border-zinc-800 pt-4">
+                    <p className="mb-3 text-xs font-semibold uppercase text-zinc-500">
+                      Moje platební údaje
+                    </p>
+                    <label className="mb-3 block space-y-1">
+                      <span className="text-xs text-zinc-500">
+                        Způsob úhrady
+                      </span>
+                      <input
+                        value={header.supplierPaymentMethod}
+                        onChange={(e) =>
+                          setHeader((h) => ({
+                            ...h,
+                            supplierPaymentMethod: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+                      />
+                    </label>
+                    <label className="mb-3 block space-y-1">
+                      <span className="text-xs text-zinc-500">
+                        Bankovní účet (popisek)
+                      </span>
+                      <input
+                        value={header.supplierBankLabel}
+                        onChange={(e) =>
+                          setHeader((h) => ({
+                            ...h,
+                            supplierBankLabel: e.target.value,
+                          }))
+                        }
+                        placeholder="např. Hlavní bankovní spojení"
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm placeholder:text-zinc-600"
+                      />
+                    </label>
+                    <label className="mb-3 block space-y-1">
+                      <span className="text-xs text-zinc-500">Číslo účtu</span>
+                      <input
+                        value={header.supplierAccountNumber}
+                        onChange={(e) =>
+                          setHeader((h) => ({
+                            ...h,
+                            supplierAccountNumber: e.target.value,
+                          }))
+                        }
+                        placeholder="např. 233652456/0600"
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm placeholder:text-zinc-600"
+                      />
+                    </label>
+                    <label className="mb-3 block space-y-1">
+                      <span className="text-xs text-zinc-500">IBAN</span>
+                      <input
+                        value={header.supplierIban}
+                        onChange={(e) =>
+                          setHeader((h) => ({
+                            ...h,
+                            supplierIban: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-xs"
+                      />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="text-xs text-zinc-500">SWIFT / BIC</span>
+                      <input
+                        value={header.supplierSwift}
+                        onChange={(e) =>
+                          setHeader((h) => ({
+                            ...h,
+                            supplierSwift: e.target.value,
+                          }))
+                        }
+                        className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-xs"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <p className="text-xs font-semibold uppercase text-zinc-500">
+                    Odběratel
+                  </p>
+                  <label className="block space-y-1">
+                    <span className="text-xs text-zinc-500">Odběratel (název)</span>
+                    <input
+                      value={header.customerName}
+                      onChange={(e) =>
+                        setHeader((h) => ({
+                          ...h,
+                          customerName: e.target.value,
+                        }))
+                      }
+                      placeholder="např. A + S, s.r.o."
+                      className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm placeholder:text-zinc-600"
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-xs text-zinc-500">IČ</span>
+                    <input
+                      value={header.customerIco}
+                      onChange={(e) =>
+                        setHeader((h) => ({
+                          ...h,
+                          customerIco: e.target.value,
+                        }))
+                      }
+                      className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-xs text-zinc-500">DIČ</span>
+                    <input
+                      value={header.customerDic}
+                      onChange={(e) =>
+                        setHeader((h) => ({
+                          ...h,
+                          customerDic: e.target.value,
+                        }))
+                      }
+                      placeholder="např. CZ25584553"
+                      className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm placeholder:text-zinc-600"
+                    />
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-300">
+                    <input
+                      type="checkbox"
+                      checked={header.customerReliableVatPayer}
+                      onChange={(e) =>
+                        setHeader((h) => ({
+                          ...h,
+                          customerReliableVatPayer: e.target.checked,
+                        }))
+                      }
+                      className="rounded border-zinc-600"
+                    />
+                    Spolehlivý plátce DPH
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-xs text-zinc-500">Sídlo</span>
+                    <textarea
+                      value={header.customerAddress}
+                      onChange={(e) =>
+                        setHeader((h) => ({
+                          ...h,
+                          customerAddress: e.target.value,
+                        }))
+                      }
+                      rows={3}
+                      placeholder="např. Úvoz 977/18, 602 00 Brno"
+                      className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm placeholder:text-zinc-600"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="mt-8 grid gap-4 border-t border-zinc-800 pt-6 sm:grid-cols-2">
+                <label className="space-y-1">
+                  <span className="text-xs text-zinc-500">Datum vystavení</span>
+                  <input
+                    type="date"
+                    value={header.issueDate}
+                    onChange={(e) =>
+                      setHeader((h) => ({ ...h, issueDate: e.target.value }))
+                    }
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs text-zinc-500">Datum splatnosti</span>
+                  <input
+                    type="date"
+                    value={header.dueDate}
+                    onChange={(e) =>
+                      setHeader((h) => ({ ...h, dueDate: e.target.value }))
+                    }
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="space-y-1 sm:col-span-2">
+                  <span className="text-xs text-zinc-500">Variabilní symbol</span>
+                  <input
+                    value={header.variableSymbol}
+                    onChange={(e) =>
+                      setHeader((h) => ({
+                        ...h,
+                        variableSymbol: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+                  />
+                </label>
                 <label className="space-y-1 sm:col-span-2">
                   <span className="text-xs text-zinc-500">Poznámka</span>
                   <input
@@ -494,11 +891,12 @@ export default function FakturaApp() {
                 <label
                   className={`flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-2 ${
                     fixNamesProvider === "deepseek" &&
-                    (tavilyConfigured === null || !tavilyConfigured)
+                    (deepSeekWebSearchAvailable === null ||
+                      !deepSeekWebSearchAvailable)
                       ? "opacity-70"
                       : ""
                   }`}
-                  title="Gemini: Google Search. DeepSeek: nástroj web_search na serveru — vyžaduje TAVILY_API_KEY v .env."
+                  title="Gemini: Google Search. DeepSeek: web_search na serveru — PERPLEXITY_API_KEY nebo TAVILY_API_KEY v .env."
                 >
                   <span className="flex items-center gap-2">
                     <input
@@ -506,17 +904,53 @@ export default function FakturaApp() {
                       checked={fixNamesWeb}
                       disabled={
                         fixNamesProvider === "deepseek" &&
-                        (tavilyConfigured === null || !tavilyConfigured)
+                        (deepSeekWebSearchAvailable === null ||
+                          !deepSeekWebSearchAvailable)
                       }
                       onChange={(e) => setFixNamesWeb(e.target.checked)}
                     />
                     Vyhledávat na webu
                   </span>
                   <span className="text-xs text-zinc-600">
-                    Gemini: Google Search · DeepSeek: jen s TAVILY_API_KEY
+                    Gemini: Google Search · DeepSeek: Perplexity nebo Tavily
                   </span>
                 </label>
               </div>
+              <label className="mb-4 flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  className="mt-1 shrink-0"
+                  checked={autoFixSettings.idokladStyle}
+                  onChange={(e) =>
+                    setAutoFixSettings((s) => ({
+                      ...s,
+                      idokladStyle: e.target.checked,
+                    }))
+                  }
+                />
+                <span className="text-sm text-zinc-400">
+                  Styl řádků jako na vydané faktuře z iDokladu (vestavěný vzor z
+                  ukázkové faktury; lze nahradit vlastním textem níže).
+                </span>
+              </label>
+              <label className="mb-4 block space-y-1">
+                <span className="text-xs text-zinc-500">
+                  Vlastní ukázky řádků místo vestavěného vzoru (volitelné)
+                </span>
+                <textarea
+                  value={autoFixSettings.styleReference}
+                  disabled={!autoFixSettings.idokladStyle}
+                  onChange={(e) =>
+                    setAutoFixSettings((s) => ({
+                      ...s,
+                      styleReference: e.target.value,
+                    }))
+                  }
+                  rows={3}
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm placeholder:text-zinc-600 disabled:opacity-50"
+                  placeholder="Nech prázdné pro vestavěný vzor, nebo vlož 2–5 řádků popisu z vlastní faktury z iDokladu…"
+                />
+              </label>
               <label className="block space-y-1 mb-4">
                 <span className="text-xs text-zinc-500">Vlastní instrukce pro opravu (názvy firem, které znáš, opravy překlepů)</span>
                 <textarea
@@ -577,7 +1011,7 @@ export default function FakturaApp() {
 
         {tab === "nahled" && (
           <section className="space-y-6">
-            <div className="flex gap-3 print:hidden">
+            <div className="flex flex-col gap-3 print:hidden sm:flex-row sm:flex-wrap sm:items-center">
               <button
                 type="button"
                 onClick={() => window.print()}
@@ -585,10 +1019,45 @@ export default function FakturaApp() {
               >
                 Tisk / Uložit jako PDF
               </button>
-              <p className="text-sm text-zinc-500 self-center">
-                V dialogu tisku zvol „Uložit jako PDF“.
+              <button
+                type="button"
+                onClick={() => void copyIdokladExport()}
+                className="rounded-xl border border-zinc-600 bg-zinc-800 px-5 py-2.5 text-sm font-semibold text-zinc-100 hover:bg-zinc-700"
+              >
+                Zkopírovat údaje pro iDoklad
+              </button>
+              <button
+                type="button"
+                onClick={openIdokladCreate}
+                className="rounded-xl border border-sky-700/80 bg-sky-950/50 px-5 py-2.5 text-sm font-semibold text-sky-100 hover:bg-sky-900/60"
+              >
+                Otevřít novou fakturu v iDokladu
+              </button>
+              <p className="text-sm text-zinc-500 sm:ml-2">
+                iDoklad formulář nepřijímá data z jiné stránky – zkopíruj text a
+                vlož ho do poznámky nebo přepiš pole ručně.{" "}
+                <a
+                  href={IDOKLAD_ISSUED_INVOICE_CREATE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sky-400 underline hover:text-sky-300"
+                >
+                  app.idoklad.cz/…/Create
+                </a>
               </p>
             </div>
+            {idokladExportHint && (
+              <p
+                className="print:hidden rounded-lg border border-emerald-800/60 bg-emerald-950/40 px-4 py-2 text-sm text-emerald-200"
+                role="status"
+              >
+                {idokladExportHint}
+              </p>
+            )}
+            <p className="print:hidden text-xs text-zinc-600">
+              Plná automatizace (bez kopírování) jde přes REST API iDokladu a OAuth
+              – viz README v `invoice-assistant`.
+            </p>
 
             <div
               id="invoice-print"
@@ -608,7 +1077,7 @@ export default function FakturaApp() {
                 </div>
               </div>
 
-              <div className="mt-6 grid gap-6 sm:grid-cols-2 text-sm">
+              <div className="mt-6 grid gap-8 sm:grid-cols-2 text-sm">
                 <div>
                   <p className="text-xs font-semibold uppercase text-zinc-500">
                     Dodavatel
@@ -616,10 +1085,59 @@ export default function FakturaApp() {
                   <p className="mt-1 font-medium whitespace-pre-line">
                     {header.supplierName || "—"}
                   </p>
-                  <p className="text-zinc-600">IČO: {header.supplierIco || "—"}</p>
-                  <p className="mt-1 whitespace-pre-line text-zinc-700">
-                    {header.supplierAddress || ""}
-                  </p>
+                  {header.supplierIco && (
+                    <p className="text-zinc-700">
+                      <span className="text-zinc-500">IČ: </span>
+                      {header.supplierIco}
+                    </p>
+                  )}
+                  {header.supplierAddress && (
+                    <p className="mt-2 whitespace-pre-line text-zinc-700">
+                      <span className="text-zinc-500">Sídlo: </span>
+                      {header.supplierAddress}
+                    </p>
+                  )}
+                  {(header.supplierPaymentMethod ||
+                    header.supplierBankLabel ||
+                    header.supplierAccountNumber ||
+                    header.supplierIban ||
+                    header.supplierSwift) && (
+                    <div className="mt-4 border-t border-zinc-200 pt-3">
+                      <p className="text-xs font-semibold uppercase text-zinc-500">
+                        Moje platební údaje
+                      </p>
+                      {header.supplierPaymentMethod && (
+                        <p className="mt-2 text-zinc-700">
+                          <span className="text-zinc-500">Způsob úhrady: </span>
+                          {header.supplierPaymentMethod}
+                        </p>
+                      )}
+                      {header.supplierBankLabel && (
+                        <p className="mt-1 text-zinc-700">
+                          <span className="text-zinc-500">Bankovní účet: </span>
+                          {header.supplierBankLabel}
+                        </p>
+                      )}
+                      {header.supplierAccountNumber && (
+                        <p className="mt-1 text-zinc-700">
+                          <span className="text-zinc-500">Číslo účtu: </span>
+                          {header.supplierAccountNumber}
+                        </p>
+                      )}
+                      {header.supplierIban && (
+                        <p className="mt-1 font-mono text-zinc-700">
+                          <span className="font-sans text-zinc-500">IBAN: </span>
+                          {header.supplierIban}
+                        </p>
+                      )}
+                      {header.supplierSwift && (
+                        <p className="mt-1 font-mono text-zinc-700">
+                          <span className="font-sans text-zinc-500">SWIFT: </span>
+                          {header.supplierSwift}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase text-zinc-500">
@@ -628,9 +1146,27 @@ export default function FakturaApp() {
                   <p className="mt-1 font-medium whitespace-pre-line">
                     {header.customerName || "—"}
                   </p>
-                  <p className="mt-1 whitespace-pre-line text-zinc-700">
-                    {header.customerAddress || ""}
-                  </p>
+                  {header.customerIco && (
+                    <p className="mt-2 text-zinc-700">
+                      <span className="text-zinc-500">IČ: </span>
+                      {header.customerIco}
+                    </p>
+                  )}
+                  {header.customerDic && (
+                    <p className="mt-1 text-zinc-700">
+                      <span className="text-zinc-500">DIČ: </span>
+                      {header.customerDic}
+                    </p>
+                  )}
+                  {header.customerReliableVatPayer && (
+                    <p className="mt-1 text-zinc-700">Spolehlivý plátce DPH</p>
+                  )}
+                  {header.customerAddress && (
+                    <p className="mt-2 whitespace-pre-line text-zinc-700">
+                      <span className="text-zinc-500">Sídlo: </span>
+                      {header.customerAddress}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -672,8 +1208,31 @@ export default function FakturaApp() {
                 </tbody>
               </table>
 
-              <div className="mt-6 flex justify-end border-t border-zinc-200 pt-4">
-                <div className="w-64 space-y-1 text-sm">
+              <div className="mt-6 flex flex-col gap-4 border-t border-zinc-200 pt-4 sm:flex-row sm:items-start sm:justify-between">
+                {header.variableSymbol &&
+                  (header.supplierAccountNumber || header.supplierIban) && (
+                    <p className="max-w-md text-sm text-zinc-600">
+                      Úhrada převodem{header.supplierPaymentMethod ? ` (${header.supplierPaymentMethod})` : ""}
+                      {header.supplierAccountNumber && (
+                        <>
+                          {" "}
+                          na účet <span className="font-mono text-zinc-800">{header.supplierAccountNumber}</span>
+                        </>
+                      )}
+                      {header.supplierIban && !header.supplierAccountNumber && (
+                        <>
+                          {" "}
+                          <span className="font-mono text-zinc-800">{header.supplierIban}</span>
+                        </>
+                      )}
+                      . Variabilní symbol:{" "}
+                      <span className="font-mono font-medium text-zinc-800">
+                        {header.variableSymbol}
+                      </span>
+                      .
+                    </p>
+                  )}
+                <div className="w-full space-y-1 text-sm sm:ml-auto sm:w-64">
                   <div className="flex justify-between">
                     <span>Základ celkem</span>
                     <span>{formatMoneyCz(totals.baseTotal)} Kč</span>
