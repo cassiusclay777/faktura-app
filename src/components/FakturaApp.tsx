@@ -114,23 +114,22 @@ export default function FakturaApp() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/config")
-      .then((r) => r.json())
-      .then(
-        (data: {
+    void (async () => {
+      try {
+        const r = await fetch("/api/config");
+        const data = (await r.json()) as {
           deepSeekWebSearchConfigured?: boolean;
           tavilyConfigured?: boolean;
           perplexityConfigured?: boolean;
-        }) => {
-          const ok =
-            data.deepSeekWebSearchConfigured ??
-            !!(data.tavilyConfigured || data.perplexityConfigured);
-          if (!cancelled) setDeepSeekWebSearchAvailable(!!ok);
-        },
-      )
-      .catch(() => {
+        };
+        const ok =
+          data.deepSeekWebSearchConfigured ??
+          !!(data.tavilyConfigured || data.perplexityConfigured);
+        if (!cancelled) setDeepSeekWebSearchAvailable(!!ok);
+      } catch {
         if (!cancelled) setDeepSeekWebSearchAvailable(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };

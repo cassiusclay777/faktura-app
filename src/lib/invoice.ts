@@ -85,6 +85,9 @@ export function formatMoneyCz(n: number): string {
 }
 
 export function formatDateCz(isoDate: string): string {
+  if (typeof isoDate !== "string" || !isoDate.trim()) {
+    return "—";
+  }
   const [y, m, d] = isoDate.split("-").map(Number);
   if (!y || !m || !d) return isoDate;
   return `${d}. ${m}. ${y}`;

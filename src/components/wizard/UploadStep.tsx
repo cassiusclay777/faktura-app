@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback } from "react";
 import DropZone from "@/components/DropZone";
 
 export interface AutoFixSettings {
@@ -33,13 +34,16 @@ export default function UploadStep({
   deepSeekWebSearchAvailable,
   onProcess,
 }: UploadStepProps) {
-  const handleFileSelected = (file: File) => {
-    void onProcess(file);
-  };
+  const handleFileSelected = useCallback(
+    (file: File) => {
+      void onProcess(file);
+    },
+    [onProcess],
+  );
 
-  const handleProcessText = () => {
-    onProcess(null);
-  };
+  const handleProcessText = useCallback(() => {
+    void onProcess(null);
+  }, [onProcess]);
 
   return (
     <section className="space-y-6 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">

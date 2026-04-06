@@ -20,7 +20,8 @@ export default function DropZone({
     e.preventDefault();
     e.stopPropagation();
     dragDepthRef.current += 1;
-    if (e.dataTransfer.items.length > 0) {
+    const n = e.dataTransfer?.items?.length ?? 0;
+    if (n > 0) {
       setIsDragging(true);
     }
   }, []);
@@ -49,8 +50,8 @@ export default function DropZone({
 
       if (disabled) return;
 
-      const files = e.dataTransfer.files;
-      if (files.length > 0) {
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
         onFile(files[0]);
       }
     },

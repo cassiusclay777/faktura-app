@@ -23,6 +23,8 @@ export default function WizardTabs({
         return "2. Faktura";
       case "nahled":
         return "3. Náhled";
+      default:
+        return tab;
     }
   };
 
