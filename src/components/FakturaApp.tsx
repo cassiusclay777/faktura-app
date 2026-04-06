@@ -13,6 +13,8 @@ import {
   type EditableInvoiceLine,
   type InvoiceHeader,
 } from "@/lib/invoice";
+import { formatUnknownError } from "@/lib/formatUnknownError";
+import { readJsonResponse } from "@/lib/readJsonResponse";
 
 const HEADER_STORAGE_KEY = "faktura-invoice-header-v1";
 
@@ -35,6 +37,9 @@ export default function FakturaApp() {
   const [pasteText, setPasteText] = useState("");
   const [provider, setProvider] = useState<"gemini" | "ollama">("gemini");
   const [fixNamesWeb, setFixNamesWeb] = useState(false);
+  const [fixNamesProvider, setFixNamesProvider] = useState<
+    "gemini" | "deepseek"
+  >("gemini");
   const [userInstructions, setUserInstructions] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,13 +75,15 @@ export default function FakturaApp() {
         fd.append("fixNames", "false");
 
         const res = await fetch("/api/process", { method: "POST", body: fd });
-        const data = (await res.json()) as {
+        const data = await readJsonResponse<{
           error?: string;
           rawTranscript?: string;
           parsed?: ParsedPodklad;
-        };
+        }>(res);
         if (!res.ok) {
-          throw new Error(data.error ?? res.statusText);
+          throw new Error(
+            data.error ?? (res.statusText || `HTTP ${res.status}`),
+          );
         }
         if (!data.parsed) throw new Error("Neočekávaná odpověď serveru.");
         setRawTranscript(data.rawTranscript ?? "");
@@ -85,7 +92,7 @@ export default function FakturaApp() {
         setOriginalLines(parsedLines);
         setTab("faktura");
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        setError(formatUnknownError(e));
       } finally {
         setLoading(false);
       }
@@ -97,31 +104,42 @@ export default function FakturaApp() {
     if (lines.length === 0) return;
     setError(null);
     setCorrecting(true);
+    setOriginalLines(lines);
     try {
       const fd = new FormData();
       fd.append("rawText", rawTranscript);
       fd.append("provider", provider);
       fd.append("fixNames", "true");
+      fd.append("fixNamesProvider", fixNamesProvider);
       fd.append("fixNamesWeb", String(fixNamesWeb));
       if (userInstructions.trim()) fd.append("userInstructions", userInstructions.trim());
 
       const res = await fetch("/api/process", { method: "POST", body: fd });
-      const data = (await res.json()) as {
+      const data = await readJsonResponse<{
         error?: string;
         parsed?: ParsedPodklad;
-      };
+      }>(res);
       if (!res.ok) {
-        throw new Error(data.error ?? res.statusText);
+        throw new Error(
+          data.error ?? (res.statusText || `HTTP ${res.status}`),
+        );
       }
       if (!data.parsed) throw new Error("Neočekávaná odpověď serveru.");
       setLines(tripLinesToEditable(data.parsed.lines));
       setShowCorrection(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(formatUnknownError(e));
     } finally {
       setCorrecting(false);
     }
-  }, [fixNamesWeb, userInstructions, lines, rawTranscript, provider]);
+  }, [
+    fixNamesWeb,
+    fixNamesProvider,
+    userInstructions,
+    lines,
+    rawTranscript,
+    provider,
+  ]);
 
   const updateLine = (id: string, patch: Partial<EditableInvoiceLine>) => {
     setLines((prev) =>
@@ -327,6 +345,7 @@ export default function FakturaApp() {
                             updateLine(line.id, { description: e.target.value })
                           }
                           rows={2}
+                          aria-label="Popis"
                           className="w-full min-w-[200px] rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs"
                         />
                       </td>
@@ -339,6 +358,7 @@ export default function FakturaApp() {
                               liters: Number(e.target.value),
                             })
                           }
+                          aria-label="Množství (l)"
                           className="w-24 rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-right"
                         />
                       </td>
@@ -352,6 +372,7 @@ export default function FakturaApp() {
                               rate: Number(e.target.value),
                             })
                           }
+                          aria-label="Cena (Kč/l)"
                           className="w-24 rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-right"
                         />
                       </td>
@@ -365,6 +386,7 @@ export default function FakturaApp() {
                               baseAmount: Number(e.target.value),
                             })
                           }
+                          aria-label="Základ (Kč)"
                           className="w-28 rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-right"
                         />
                       </td>
@@ -420,16 +442,38 @@ export default function FakturaApp() {
 
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
               <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-zinc-500">
-                Korekce názvů (Gemini)
+                Korekce názvů (AI)
               </h2>
+              <div className="mb-4 flex flex-wrap gap-4 text-sm">
+                <span className="text-zinc-500">Model:</span>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="fixNamesProvider"
+                    checked={fixNamesProvider === "gemini"}
+                    onChange={() => setFixNamesProvider("gemini")}
+                  />
+                  Gemini
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="fixNamesProvider"
+                    checked={fixNamesProvider === "deepseek"}
+                    onChange={() => setFixNamesProvider("deepseek")}
+                  />
+                  DeepSeek
+                </label>
+              </div>
               <div className="grid gap-4 sm:grid-cols-2 mb-4">
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
                     checked={fixNamesWeb}
+                    disabled={fixNamesProvider === "deepseek"}
                     onChange={(e) => setFixNamesWeb(e.target.checked)}
                   />
-                  Vyhledávat na webu (ověří názvy firem ob reálných údajích)
+                  Vyhledávat na webu (jen Gemini)
                 </label>
               </div>
               <label className="block space-y-1 mb-4">
