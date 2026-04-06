@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import DropZone from "@/components/DropZone";
 
 export interface AutoFixSettings {
@@ -34,11 +33,8 @@ export default function UploadStep({
   deepSeekWebSearchAvailable,
   onProcess,
 }: UploadStepProps) {
-  const [localFile, setLocalFile] = useState<File | null>(null);
-
   const handleFileSelected = (file: File) => {
-    setLocalFile(file);
-    onProcess(file);
+    void onProcess(file);
   };
 
   const handleProcessText = () => {

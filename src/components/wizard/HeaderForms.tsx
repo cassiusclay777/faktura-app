@@ -1,7 +1,6 @@
 "use client";
 
 import type { InvoiceHeader } from "@/lib/invoice";
-import { formatDateCz } from "@/lib/invoice";
 
 interface HeaderFormsProps {
   header: InvoiceHeader;
@@ -57,10 +56,11 @@ export default function HeaderForms({
                 type="button"
                 onClick={handleSupplierAres}
                 disabled={aresLoading !== null}
-                title="Načíst název a sídlo z ARES podle IČ"
+                title="Vyhledat název a sídlo v ARES podle IČ"
+                aria-label="Vyhledat dodavatele v ARES podle IČ"
                 className="shrink-0 rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-700 disabled:opacity-50"
               >
-                {aresLoading === "supplier" ? "…" : "ARES"}
+                {aresLoading === "supplier" ? "…" : "Vyhledat"}
               </button>
             </div>
           </label>
@@ -155,10 +155,11 @@ export default function HeaderForms({
                 type="button"
                 onClick={handleCustomerAres}
                 disabled={aresLoading !== null}
-                title="Načíst název, sídlo a DIČ z ARES podle IČ"
+                title="Vyhledat název, sídlo a DIČ v ARES podle IČ"
+                aria-label="Vyhledat odběratele v ARES podle IČ"
                 className="shrink-0 rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-700 disabled:opacity-50"
               >
-                {aresLoading === "customer" ? "…" : "ARES"}
+                {aresLoading === "customer" ? "…" : "Vyhledat"}
               </button>
             </div>
           </label>
