@@ -18,7 +18,20 @@ import {
   buildIdokladExportText,
   IDOKLAD_ISSUED_INVOICE_CREATE_URL,
 } from "@/lib/idokladExport";
+import {
+  clearInvoiceHistory,
+  deleteInvoiceFromHistory,
+  loadInvoiceHistory,
+  saveInvoiceToHistory,
+  type SavedInvoice,
+} from "@/lib/invoiceHistory";
 import { readJsonResponse } from "@/lib/readJsonResponse";
+import DropZone from "@/components/DropZone";
+import AppHeader from "@/components/ui/AppHeader";
+import UploadStep from "@/components/wizard/UploadStep";
+import InvoiceStep from "@/components/wizard/InvoiceStep";
+import PreviewStep from "@/components/wizard/PreviewStep";
+import type { AutoFixSettings } from "@/components/wizard/UploadStep";
 
 const HEADER_STORAGE_KEY = "faktura-invoice-header-v1";
 const AUTOFIX_STORAGE_KEY = "faktura-autofix-settings-v1";
@@ -35,14 +48,7 @@ function loadHeader(): InvoiceHeader {
   }
 }
 
-type AutoFixSettings = {
-  enabled: boolean;
-  provider: "gemini" | "deepseek";
-  useWeb: boolean;
-  /** Popisy řádků ve stylu vydané faktury z iDokladu (vestavěný vzor nebo vlastní níže) */
-  idokladStyle: boolean;
-  styleReference: string;
-};
+
 
 function loadAutoFixSettings(): AutoFixSettings {
   const defaults: AutoFixSettings = {
@@ -93,11 +99,21 @@ export default function FakturaApp() {
   const [idokladExportHint, setIdokladExportHint] = useState<string | null>(
     null,
   );
+  const [historyItems, setHistoryItems] = useState<SavedInvoice[]>([]);
+  const [saveInvoiceLabel, setSaveInvoiceLabel] = useState("");
+  const [aresLoading, setAresLoading] = useState<"supplier" | "customer" | null>(
+    null,
+  );
+
+  const refreshHistory = useCallback(() => {
+    setHistoryItems(loadInvoiceHistory());
+  }, []);
 
   useEffect(() => {
     setHeader(loadHeader());
     setAutoFixSettings(loadAutoFixSettings());
-  }, []);
+    refreshHistory();
+  }, [refreshHistory]);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,6 +168,87 @@ export default function FakturaApp() {
       "noopener,noreferrer",
     );
   }, []);
+
+  const handleSaveToHistory = useCallback(() => {
+    if (lines.length === 0) {
+      setError("Nejdřív načti podklad (řádky faktury).");
+      return;
+    }
+    saveInvoiceToHistory(
+      header,
+      lines,
+      rawTranscript,
+      saveInvoiceLabel.trim() || undefined,
+    );
+    setSaveInvoiceLabel("");
+    refreshHistory();
+  }, [header, lines, rawTranscript, saveInvoiceLabel, refreshHistory]);
+
+  const loadFromHistory = useCallback((item: SavedInvoice) => {
+    setHeader(item.header);
+    setLines(item.lines);
+    setRawTranscript(item.rawTranscript);
+    setOriginalLines(item.lines);
+    setTab("faktura");
+  }, []);
+
+  const removeHistoryItem = useCallback(
+    (id: string) => {
+      deleteInvoiceFromHistory(id);
+      refreshHistory();
+    },
+    [refreshHistory],
+  );
+
+  const fillFromAres = useCallback(
+    async (side: "supplier" | "customer") => {
+      const rawIco = side === "supplier" ? header.supplierIco : header.customerIco;
+      const clean = rawIco.replace(/\s/g, "");
+      if (!/^\d{8}$/.test(clean)) {
+        setError("Zadej platné 8místné IČO.");
+        return;
+      }
+      setAresLoading(side);
+      setError(null);
+      try {
+        const res = await fetch(`/api/ares?ico=${encodeURIComponent(clean)}`);
+        const data = await readJsonResponse<{
+          error?: string;
+          ico?: string;
+          name?: string;
+          address?: string;
+          dic?: string;
+        }>(res);
+        if (!res.ok) {
+          throw new Error(data.error ?? `HTTP ${res.status}`);
+        }
+        if (!data.name) {
+          throw new Error("Neočekávaná odpověď serveru.");
+        }
+        setHeader((h) =>
+          side === "supplier"
+            ? {
+                ...h,
+                supplierIco: data.ico ?? clean,
+                supplierName: data.name || h.supplierName,
+                supplierAddress: data.address || h.supplierAddress,
+              }
+            : {
+                ...h,
+                customerIco: data.ico ?? clean,
+                customerName: data.name || h.customerName,
+                customerAddress: data.address || h.customerAddress,
+                customerDic: data.dic || h.customerDic,
+              },
+        );
+      } catch (e) {
+        setError(formatUnknownError(e));
+      } finally {
+        setAresLoading(null);
+      }
+    },
+    [header.supplierIco, header.customerIco],
+  );
 
   const copyIdokladExport = useCallback(async () => {
     const text = buildIdokladExportText(header, lines, vatPercent);
@@ -303,38 +400,7 @@ export default function FakturaApp() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <header className="print:hidden border-b border-zinc-800 bg-zinc-900/80 backdrop-blur px-4 py-4">
-        <div className="mx-auto max-w-5xl flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">
-              Faktura z podkladu
-            </h1>
-            <p className="text-sm text-zinc-500">
-              Podklad → řádky → náhled / tisk (bez iDoklad API)
-            </p>
-          </div>
-          <nav className="flex gap-2">
-            {(["podklad", "faktura", "nahled"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTab(t)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                  tab === t
-                    ? "bg-amber-500/20 text-amber-200 ring-1 ring-amber-500/40"
-                    : "text-zinc-400 hover:bg-zinc-800"
-                }`}
-              >
-                {t === "podklad"
-                  ? "1. Podklad"
-                  : t === "faktura"
-                    ? "2. Faktura"
-                    : "3. Náhled"}
-              </button>
-            ))}
-          </nav>
-        </div>
-      </header>
+      <AppHeader currentTab={tab} onTabChange={setTab} />
 
       <main className="mx-auto max-w-5xl px-4 py-8 print:max-w-none print:px-0 print:py-0">
         {error && (
@@ -362,23 +428,15 @@ export default function FakturaApp() {
               />
             </label>
 
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
-              <label className="flex-1 space-y-2">
-                <span className="text-sm text-zinc-400">
-                  Nebo soubor (.txt / PDF / obrázek)
-                </span>
-                <input
-                  type="file"
-                  accept=".txt,.pdf,text/plain,application/pdf,image/jpeg,image/png,image/webp,image/gif"
-                  className="block w-full text-sm text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-1.5 file:text-zinc-200"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) void processPodklad(f);
-                    e.target.value = "";
-                  }}
-                  disabled={loading}
-                />
-              </label>
+            <div className="space-y-2">
+              <span className="text-sm text-zinc-400">
+                Nebo přetáhni / klikni pro soubor (.txt, PDF, obrázek)
+              </span>
+              <DropZone
+                onFile={(f) => void processPodklad(f)}
+                accept=".txt,.pdf,text/plain,application/pdf,image/jpeg,image/png,image/webp,image/gif"
+                disabled={loading}
+              />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -494,6 +552,87 @@ export default function FakturaApp() {
           <section className="space-y-6">
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
               <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-zinc-500">
+                Historie faktur (prohlížeč)
+              </h2>
+              <p className="mb-4 text-xs text-zinc-600">
+                Uložené kopie hlavičky, řádků a přepisu podkladu v{" "}
+                <code className="text-zinc-500">localStorage</code> (max. 50).
+              </p>
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                <label className="min-w-[200px] flex-1 space-y-1">
+                  <span className="text-xs text-zinc-500">Název zálohy (volitelné)</span>
+                  <input
+                    value={saveInvoiceLabel}
+                    onChange={(e) => setSaveInvoiceLabel(e.target.value)}
+                    placeholder="např. podle odběratele nebo VS"
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm placeholder:text-zinc-600"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={handleSaveToHistory}
+                  className="rounded-xl border border-amber-600/60 bg-amber-950/40 px-4 py-2 text-sm font-medium text-amber-100 hover:bg-amber-900/50"
+                >
+                  Uložit aktuální fakturu
+                </button>
+                {historyItems.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (
+                        typeof window !== "undefined" &&
+                        window.confirm("Opravdu smazat celou historii faktur?")
+                      ) {
+                        clearInvoiceHistory();
+                        refreshHistory();
+                      }
+                    }}
+                    className="rounded-lg border border-zinc-700 px-3 py-2 text-xs text-zinc-500 hover:bg-zinc-800"
+                  >
+                    Vymazat vše
+                  </button>
+                )}
+              </div>
+              {historyItems.length === 0 ? (
+                <p className="text-sm text-zinc-600">Zatím nic uloženo.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {historyItems.map((item) => (
+                    <li
+                      key={item.id}
+                      className="flex flex-col gap-2 rounded-lg border border-zinc-800 bg-zinc-950/50 p-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div>
+                        <div className="font-medium text-zinc-200">{item.name}</div>
+                        <div className="text-xs text-zinc-500">
+                          {new Date(item.savedAt).toLocaleString("cs-CZ")} ·{" "}
+                          {item.lines.length} řádků
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => loadFromHistory(item)}
+                          className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-700"
+                        >
+                          Načíst
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeHistoryItem(item.id)}
+                          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-900"
+                        >
+                          Smazat
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
+              <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-zinc-500">
                 Dodavatel a odběratel
               </h2>
               <div className="grid gap-8 lg:grid-cols-2">
@@ -513,13 +652,27 @@ export default function FakturaApp() {
                   </label>
                   <label className="block space-y-1">
                     <span className="text-xs text-zinc-500">IČ</span>
-                    <input
-                      value={header.supplierIco}
-                      onChange={(e) =>
-                        setHeader((h) => ({ ...h, supplierIco: e.target.value }))
-                      }
-                      className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        value={header.supplierIco}
+                        onChange={(e) =>
+                          setHeader((h) => ({ ...h, supplierIco: e.target.value }))
+                        }
+                        className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+                        inputMode="numeric"
+                        placeholder="8 číslic"
+                        autoComplete="off"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void fillFromAres("supplier")}
+                        disabled={aresLoading !== null}
+                        title="Načíst název a sídlo z ARES podle IČ"
+                        className="shrink-0 rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-700 disabled:opacity-50"
+                      >
+                        {aresLoading === "supplier" ? "…" : "ARES"}
+                      </button>
+                    </div>
                   </label>
                   <label className="block space-y-1">
                     <span className="text-xs text-zinc-500">Sídlo</span>
@@ -633,16 +786,30 @@ export default function FakturaApp() {
                   </label>
                   <label className="block space-y-1">
                     <span className="text-xs text-zinc-500">IČ</span>
-                    <input
-                      value={header.customerIco}
-                      onChange={(e) =>
-                        setHeader((h) => ({
-                          ...h,
-                          customerIco: e.target.value,
-                        }))
-                      }
-                      className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        value={header.customerIco}
+                        onChange={(e) =>
+                          setHeader((h) => ({
+                            ...h,
+                            customerIco: e.target.value,
+                          }))
+                        }
+                        className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+                        inputMode="numeric"
+                        placeholder="8 číslic"
+                        autoComplete="off"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void fillFromAres("customer")}
+                        disabled={aresLoading !== null}
+                        title="Načíst název, sídlo a DIČ z ARES podle IČ"
+                        className="shrink-0 rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-700 disabled:opacity-50"
+                      >
+                        {aresLoading === "customer" ? "…" : "ARES"}
+                      </button>
+                    </div>
                   </label>
                   <label className="block space-y-1">
                     <span className="text-xs text-zinc-500">DIČ</span>

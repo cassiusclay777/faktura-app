@@ -5,6 +5,7 @@
         "davidanson.vscode-markdownlint",
         "redhat.vscode-yaml",
         "wakatime.vscode-wakatime",
-        "localstack.localstack"
+        "localstack.localstack",
+        "sst-dev.opencode"
     ]
 }

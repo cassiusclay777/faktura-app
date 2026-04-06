@@ -15,18 +15,18 @@
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4",
-    "dotenv": "^17.3.1",
+    "dotenv": "^17.4.1",
     "invoice-assistant": "file:./invoice-assistant",
     "next": "15.5.14",
-    "pdf-parse": "^1.1.1",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "pdf-parse": "^1.1.4",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "tailwindcss": "^4",
-    "typescript": "5.9.3"
+    "typescript": "5.9"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
-    "@types/node": "20.19.37",
+    "@types/node": "^20.19.39",
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "19.2.14",
     "@types/react-dom": "^19",
