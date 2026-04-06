@@ -1,6 +1,7 @@
 /**
  * Vyhledávání pro DeepSeek tool `web_search` (korekce názvů).
- * Tavily dává nejlepší výsledky pro LLM; bez klíče slabší DuckDuckGo (bez API účtu).
+ * API route volá tuto funkci jen když je nastavený TAVILY_API_KEY (DeepSeek + web).
+ * DuckDuckGo zůstává jako fallback uvnitř, pokud by Tavily selhalo.
  */
 
 type TavilyResult = {

@@ -47,10 +47,35 @@ export default function FakturaApp() {
   const [originalLines, setOriginalLines] = useState<EditableInvoiceLine[]>([]);
   const [correcting, setCorrecting] = useState(false);
   const [showCorrection, setShowCorrection] = useState(false);
+  /** Server má TAVILY_API_KEY — nutné pro DeepSeek + „Vyhledávat na webu“. */
+  const [tavilyConfigured, setTavilyConfigured] = useState<boolean | null>(
+    null,
+  );
 
   useEffect(() => {
     setHeader(loadHeader());
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/config")
+      .then((r) => r.json())
+      .then((data: { tavilyConfigured?: boolean }) => {
+        if (!cancelled) setTavilyConfigured(!!data.tavilyConfigured);
+      })
+      .catch(() => {
+        if (!cancelled) setTavilyConfigured(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (fixNamesProvider === "deepseek" && tavilyConfigured === false) {
+      setFixNamesWeb(false);
+    }
+  }, [fixNamesProvider, tavilyConfigured]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -467,19 +492,28 @@ export default function FakturaApp() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2 mb-4">
                 <label
-                  className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-2"
-                  title="Gemini: Google Search. DeepSeek: nástroj web_search — doporučeno TAVILY_API_KEY, jinak DuckDuckGo."
+                  className={`flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-2 ${
+                    fixNamesProvider === "deepseek" &&
+                    (tavilyConfigured === null || !tavilyConfigured)
+                      ? "opacity-70"
+                      : ""
+                  }`}
+                  title="Gemini: Google Search. DeepSeek: nástroj web_search na serveru — vyžaduje TAVILY_API_KEY v .env."
                 >
                   <span className="flex items-center gap-2">
                     <input
                       type="checkbox"
                       checked={fixNamesWeb}
+                      disabled={
+                        fixNamesProvider === "deepseek" &&
+                        (tavilyConfigured === null || !tavilyConfigured)
+                      }
                       onChange={(e) => setFixNamesWeb(e.target.checked)}
                     />
                     Vyhledávat na webu
                   </span>
                   <span className="text-xs text-zinc-600">
-                    Gemini: Google Search · DeepSeek: Tavily (volitelný klíč) nebo DuckDuckGo
+                    Gemini: Google Search · DeepSeek: jen s TAVILY_API_KEY
                   </span>
                 </label>
               </div>

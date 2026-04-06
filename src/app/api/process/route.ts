@@ -92,6 +92,21 @@ export async function POST(req: NextRequest) {
     let parsed = parseTripText(text);
 
     if (fixNames) {
+      const tavilyKey = process.env.TAVILY_API_KEY?.trim();
+      /** DeepSeek nemá Google Search; web_search pouze s Tavily na serveru. */
+      const deepSeekWebEnabled =
+        fixNamesWeb && fixNamesProvider === "deepseek" && !!tavilyKey;
+
+      if (fixNamesWeb && fixNamesProvider === "deepseek" && !tavilyKey) {
+        return NextResponse.json(
+          {
+            error:
+              "Pro vyhledávání na webu při korekci DeepSeek nastav TAVILY_API_KEY v .env (viz .env.example). Korekce přes Gemini používá Google Search bez Tavily.",
+          },
+          { status: 400 },
+        );
+      }
+
       let corrected;
       if (fixNamesProvider === "deepseek") {
         const key = process.env.DEEPSEEK_API_KEY;
@@ -110,8 +125,8 @@ export async function POST(req: NextRequest) {
           baseUrl: process.env.DEEPSEEK_API_BASE,
           rawTranscript: text,
           userInstructions,
-          useWebSearch: fixNamesWeb,
-          webSearch: fixNamesWeb ? searchWebForCorrection : undefined,
+          useWebSearch: deepSeekWebEnabled,
+          webSearch: deepSeekWebEnabled ? searchWebForCorrection : undefined,
         });
       } else {
         const key = process.env.GEMINI_API_KEY;
