@@ -35,7 +35,6 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-!.env.example
 
 # vercel
 .vercel
@@ -43,4 +42,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# Aider: lokální historie a cache, ne kořenová konfigurace
 .aider*
+!.aider.conf.yml
