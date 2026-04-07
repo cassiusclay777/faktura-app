@@ -57,21 +57,41 @@ export async function correctTripLineDescriptions(
     ...(opts.useWebSearch ? { tools: [GOOGLE_SEARCH_TOOL] } : {}),
   });
 
-  const result = await model.generateContent(userPrompt);
-  const text = result.response.text();
-  
-  if (!text?.trim()) {
-    throw new Error("Gemini (korekce názvů) vrátil prázdnou odpověď.");
-  }
-
-  let parsed: unknown;
   try {
-    parsed = extractJsonArray(text);
-  } catch (e) {
-    throw new Error(
-      `Nepodařilo se zparsovat JSON z korekce názvů: ${(e as Error).message}`,
-    );
-  }
+    const result = await model.generateContent(userPrompt);
+    const text = result.response.text();
+    
+    if (!text?.trim()) {
+      throw new Error("Gemini (korekce názvů) vrátil prázdnou odpověď.");
+    }
 
-  return mergeCorrectedDescriptions(lines, parsed);
+    let parsed: unknown;
+    try {
+      parsed = extractJsonArray(text);
+    } catch (e) {
+      // Zkusit najít JSON v odpovědi i když není správně formátovaný
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]);
+        } catch (parseError) {
+          throw new Error(
+            `Nepodařilo se zparsovat JSON z korekce názvů: ${(e as Error).message}. Text: ${text.slice(0, 200)}`,
+          );
+        }
+      } else {
+        throw new Error(
+          `Nepodařilo se zparsovat JSON z korekce názvů: ${(e as Error).message}. Text: ${text.slice(0, 200)}`,
+        );
+      }
+    }
+
+    return mergeCorrectedDescriptions(lines, parsed);
+  } catch (error) {
+    if (error instanceof Error) {
+      // Přidat více informací pro lepší diagnostiku
+      throw new Error(`Gemini korekce názvů selhala: ${error.message}`);
+    }
+    throw error;
+  }
 }

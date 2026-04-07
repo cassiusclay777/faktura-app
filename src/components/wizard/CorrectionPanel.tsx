@@ -206,7 +206,7 @@ export default function CorrectionPanel({
           type="button"
           onClick={() => void onRunCorrection()}
           disabled={correcting || lines.length === 0}
-          className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-40 flex items-center gap-2"
+          className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-40 flex items-center gap-2 transition-colors duration-200"
         >
           {correcting ? (
             <>
@@ -217,54 +217,91 @@ export default function CorrectionPanel({
               Opravuji…
             </>
           ) : (
-            "Opravit názvy"
+            <>
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Opravit názvy
+            </>
           )}
         </button>
         {lines.length === 0 && (
-          <p className="text-sm text-amber-500">
+          <p className="text-sm text-amber-500 flex items-center gap-1">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.998-.833-2.732 0L4.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
             Nejprve načti řádky z podkladu
           </p>
         )}
         {correcting && (
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-zinc-500 flex items-center gap-1">
+            <svg className="h-4 w-4 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
             Může to trvat až 30 sekund…
           </p>
         )}
       </div>
 
-      {showCorrection && (
-        <div className="mt-6 space-y-3">
-          <h3 className="text-sm font-medium text-zinc-300">Porovnání: původní → opravené</h3>
-          <div className="space-y-2">
-            {lines.map((line, i) => {
-              const orig = originalLines[i];
-              const changed = orig && orig.description !== line.description;
-              return (
-                <div key={line.id} className="rounded-lg border border-zinc-700 bg-zinc-950/50 p-3">
-                  <div className="text-xs text-zinc-500 mb-1">{formatDateCz(line.dateIso)}</div>
-                  {changed ? (
-                    <div className="space-y-1">
-                      <div className="text-sm text-zinc-400">
-                        <span className="text-red-400 line-through">{orig?.description}</span>
-                      </div>
-                      <div className="text-sm text-emerald-400">
-                        → {line.description}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-sm text-zinc-300">{line.description}</div>
-                  )}
-                </div>
-              );
-            })}
+      {lines.length > 0 && (
+        <div className="mt-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-zinc-300">Porovnání: původní → opravené</h3>
+            <button
+              type="button"
+              onClick={() => onShowCorrectionChange(!showCorrection)}
+              className="text-xs text-zinc-500 hover:text-zinc-300 flex items-center gap-1"
+            >
+              {showCorrection ? (
+                <>
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
+                  Skrýt
+                </>
+              ) : (
+                <>
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                  Zobrazit
+                </>
+              )}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => onShowCorrectionChange(false)}
-            className="text-xs text-zinc-500 hover:text-zinc-300"
-          >
-            Skrýt porovnání
-          </button>
+          {showCorrection && (
+            <div className="space-y-2">
+              {lines.map((line, i) => {
+                const orig = originalLines[i];
+                const changed = orig && orig.description !== line.description;
+                return (
+                  <div key={line.id} className="rounded-lg border border-zinc-700 bg-zinc-950/50 p-3">
+                    <div className="text-xs text-zinc-500 mb-1">{formatDateCz(line.dateIso)}</div>
+                    {changed ? (
+                      <div className="space-y-1">
+                        <div className="text-sm text-zinc-400">
+                          <span className="text-red-400 line-through">{orig?.description}</span>
+                        </div>
+                        <div className="text-sm text-emerald-400">
+                          → {line.description}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-zinc-300">{line.description}</div>
+                    )}
+                  </div>
+                );
+              })}
+              {lines.every((line, i) => {
+                const orig = originalLines[i];
+                return !orig || orig.description === line.description;
+              }) && (
+                <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-4 text-center">
+                  <p className="text-sm text-zinc-400">Žádné změny – názvy zůstaly stejné.</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

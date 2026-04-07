@@ -252,9 +252,21 @@ function parseCorrectionJson(lines: TripLine[], text: string): TripLine[] {
   try {
     parsed = extractJsonArray(text);
   } catch (e) {
-    throw new Error(
-      `Nepodařilo se zparsovat JSON z korekce (DeepSeek): ${(e as Error).message}`,
-    );
+    // Zkusit najít JSON v odpovědi i když není správně formátovaný
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      try {
+        parsed = JSON.parse(jsonMatch[0]);
+      } catch (parseError) {
+        throw new Error(
+          `Nepodařilo se zparsovat JSON z korekce (DeepSeek): ${(e as Error).message}. Text: ${text.slice(0, 200)}`,
+        );
+      }
+    } else {
+      throw new Error(
+        `Nepodařilo se zparsovat JSON z korekce (DeepSeek): ${(e as Error).message}. Text: ${text.slice(0, 200)}`,
+      );
+    }
   }
   return mergeCorrectedDescriptions(lines, parsed);
 }
