@@ -51,55 +51,90 @@ export default function CorrectionPanel({
       <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-zinc-500">
         Korekce názvů (AI)
       </h2>
-      <div className="mb-4 flex flex-wrap gap-4 text-sm">
-        <span className="text-zinc-500">Model:</span>
-        <label className="flex items-center gap-2">
-          <input
-            type="radio"
-            name="fixNamesProvider"
-            checked={fixNamesProvider === "gemini"}
-            onChange={() => onFixNamesProviderChange("gemini")}
-          />
-          Gemini
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="radio"
-            name="fixNamesProvider"
-            checked={fixNamesProvider === "deepseek"}
-            onChange={() => onFixNamesProviderChange("deepseek")}
-          />
-          DeepSeek
-        </label>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2 mb-4">
-        <label
-          className={`flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-2 ${
-            fixNamesProvider === "deepseek" &&
-            (deepSeekWebSearchAvailable === null ||
-              !deepSeekWebSearchAvailable)
-              ? "opacity-70"
-              : ""
-          }`}
-          title="Gemini: Google Search. DeepSeek: web_search na serveru — PERPLEXITY_API_KEY nebo TAVILY_API_KEY v .env."
-        >
-          <span className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={fixNamesWeb}
-              disabled={
-                fixNamesProvider === "deepseek" &&
-                (deepSeekWebSearchAvailable === null ||
-                  !deepSeekWebSearchAvailable)
-              }
-              onChange={(e) => onFixNamesWebChange(e.target.checked)}
-            />
-            Vyhledávat na webu
-          </span>
-          <span className="text-xs text-zinc-600">
-            Gemini: Google Search · DeepSeek: Perplexity nebo Tavily
-          </span>
-        </label>
+      <div className="mb-6 space-y-4">
+        <div>
+          <h3 className="mb-2 text-sm font-medium text-zinc-400">Základní nastavení</h3>
+          <div className="flex flex-wrap gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-zinc-500">Model:</span>
+              <div className="flex gap-2">
+                <label className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 hover:bg-zinc-800/50 has-[:checked]:border-amber-500 has-[:checked]:bg-amber-500/10">
+                  <input
+                    type="radio"
+                    name="fixNamesProvider"
+                    className="sr-only"
+                    checked={fixNamesProvider === "gemini"}
+                    onChange={() => onFixNamesProviderChange("gemini")}
+                  />
+                  <span className={`h-2.5 w-2.5 rounded-full border ${fixNamesProvider === "gemini" ? "border-amber-500 bg-amber-500" : "border-zinc-600"}`} />
+                  <span className={fixNamesProvider === "gemini" ? "text-amber-400" : "text-zinc-400"}>
+                    Gemini
+                  </span>
+                </label>
+                <label className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 hover:bg-zinc-800/50 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-500/10">
+                  <input
+                    type="radio"
+                    name="fixNamesProvider"
+                    className="sr-only"
+                    checked={fixNamesProvider === "deepseek"}
+                    onChange={() => onFixNamesProviderChange("deepseek")}
+                  />
+                  <span className={`h-2.5 w-2.5 rounded-full border ${fixNamesProvider === "deepseek" ? "border-blue-500 bg-blue-500" : "border-zinc-600"}`} />
+                  <span className={fixNamesProvider === "deepseek" ? "text-blue-400" : "text-zinc-400"}>
+                    DeepSeek
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-zinc-600">
+            {fixNamesProvider === "gemini" 
+              ? "Gemini využívá Google Search pro ověření názvů." 
+              : "DeepSeek používá Perplexity nebo Tavily pro webové vyhledávání."}
+          </p>
+        </div>
+        
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <label className="flex items-center gap-2">
+              <div className="relative inline-flex h-5 w-9 items-center rounded-full bg-zinc-700 transition-colors has-[:checked]:bg-emerald-600">
+                <input
+                  type="checkbox"
+                  checked={fixNamesWeb}
+                  disabled={
+                    fixNamesProvider === "deepseek" &&
+                    (deepSeekWebSearchAvailable === null ||
+                      !deepSeekWebSearchAvailable)
+                  }
+                  onChange={(e) => onFixNamesWebChange(e.target.checked)}
+                  className="sr-only"
+                />
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${fixNamesWeb ? 'translate-x-5' : 'translate-x-1'}`} />
+              </div>
+              <div>
+                <span className={`text-sm ${fixNamesProvider === "deepseek" &&
+                    (deepSeekWebSearchAvailable === null ||
+                      !deepSeekWebSearchAvailable)
+                    ? "text-zinc-600"
+                    : "text-zinc-400"}`}>
+                  Vyhledávat na webu
+                </span>
+                {fixNamesProvider === "deepseek" &&
+                  (deepSeekWebSearchAvailable === null ||
+                    !deepSeekWebSearchAvailable) && (
+                  <p className="text-xs text-amber-500">
+                    Vyžaduje PERPLEXITY_API_KEY nebo TAVILY_API_KEY
+                  </p>
+                )}
+              </div>
+            </label>
+            <p className="text-xs text-zinc-600">
+              {fixNamesWeb
+                ? 'AI bude ověřovat názvy na webu pro vyšší přesnost'
+                : 'AI použije pouze interní znalosti bez připojení k webu'}
+            </p>
+          </div>
+        </div>
       </div>
       <label className="mb-4 flex items-start gap-2">
         <input
