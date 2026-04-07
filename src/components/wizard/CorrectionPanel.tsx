@@ -14,7 +14,6 @@ interface AutoFixSettings {
 interface CorrectionPanelProps {
   lines: EditableInvoiceLine[];
   originalLines: EditableInvoiceLine[];
-  rawTranscript: string;
   fixNamesProvider: "gemini" | "deepseek";
   onFixNamesProviderChange: (provider: "gemini" | "deepseek") => void;
   fixNamesWeb: boolean;
@@ -33,7 +32,6 @@ interface CorrectionPanelProps {
 export default function CorrectionPanel({
   lines,
   originalLines,
-  rawTranscript,
   fixNamesProvider,
   onFixNamesProviderChange,
   fixNamesWeb,

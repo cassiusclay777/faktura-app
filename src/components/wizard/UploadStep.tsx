@@ -14,8 +14,8 @@ export interface AutoFixSettings {
 interface UploadStepProps {
   pasteText: string;
   onPasteTextChange: (text: string) => void;
-  provider: "gemini" | "ollama";
-  onProviderChange: (provider: "gemini" | "ollama") => void;
+  provider: "gemini" | "ollama" | "deepseek";
+  onProviderChange: (provider: "gemini" | "ollama" | "deepseek") => void;
   autoFixSettings: AutoFixSettings;
   onAutoFixSettingsChange: (settings: AutoFixSettings) => void;
   loading: boolean;
@@ -78,13 +78,29 @@ export default function UploadStep({
           <select
             value={provider}
             onChange={(e) =>
-              onProviderChange(e.target.value as "gemini" | "ollama")
+              onProviderChange(
+                e.target.value as "gemini" | "ollama" | "deepseek",
+              )
             }
             className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
           >
             <option value="gemini">Gemini (cloud, GEMINI_API_KEY)</option>
+            <option value="deepseek">
+              DeepSeek (cloud, DEEPSEEK_API_KEY)
+            </option>
             <option value="ollama">Ollama (lokálně)</option>
           </select>
+          <p className="text-xs text-zinc-600">
+            DeepSeek v cloudu nebere obrázky přímo — pro tuto volbu nastav{" "}
+            <code className="text-zinc-500">DEEPSEEK_VISION_API_BASE</code>{" "}
+            (např. <code className="text-zinc-500">https://openrouter.ai/api/v1</code>
+            ) a klíč{" "}
+            <code className="text-zinc-500">OPENROUTER_API_KEY</code> /{" "}
+            <code className="text-zinc-500">OPENAI_API_KEY</code>; volitelně{" "}
+            <code className="text-zinc-500">DEEPSEEK_VISION_MODEL</code> (default{" "}
+            <code className="text-zinc-500">gpt-4o-mini</code>). Korekce názvů dál
+            používá <code className="text-zinc-500">DEEPSEEK_API_KEY</code>.
+          </p>
         </label>
       </div>
 
