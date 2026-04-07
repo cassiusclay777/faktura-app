@@ -53,7 +53,17 @@ export default function CorrectionPanel({
       </h2>
       <div className="mb-6 space-y-4">
         <div>
-          <h3 className="mb-2 text-sm font-medium text-zinc-400">Základní nastavení</h3>
+          <div className="mb-2 flex items-center gap-2">
+            <h3 className="text-sm font-medium text-zinc-400">Základní nastavení</h3>
+            <div className="group relative">
+              <svg className="h-4 w-4 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div className="absolute bottom-full left-1/2 mb-2 hidden -translate-x-1/2 rounded-lg bg-zinc-800 p-3 text-xs text-zinc-300 shadow-xl group-hover:block w-64">
+                <p>Vyber AI model pro korekci názvů. Gemini používá Google Search, DeepSeek používá Perplexity/Tavily pro webové vyhledávání.</p>
+              </div>
+            </div>
+          </div>
           <div className="flex flex-wrap gap-4 text-sm">
             <div className="flex items-center gap-2">
               <span className="text-zinc-500">Model:</span>
@@ -96,38 +106,48 @@ export default function CorrectionPanel({
         
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <label className="flex items-center gap-2">
-              <div className="relative inline-flex h-5 w-9 items-center rounded-full bg-zinc-700 transition-colors has-[:checked]:bg-emerald-600">
-                <input
-                  type="checkbox"
-                  checked={fixNamesWeb}
-                  disabled={
-                    fixNamesProvider === "deepseek" &&
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2">
+                <div className="relative inline-flex h-5 w-9 items-center rounded-full bg-zinc-700 transition-colors has-[:checked]:bg-emerald-600">
+                  <input
+                    type="checkbox"
+                    checked={fixNamesWeb}
+                    disabled={
+                      fixNamesProvider === "deepseek" &&
+                      (deepSeekWebSearchAvailable === null ||
+                        !deepSeekWebSearchAvailable)
+                    }
+                    onChange={(e) => onFixNamesWebChange(e.target.checked)}
+                    className="sr-only"
+                  />
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${fixNamesWeb ? 'translate-x-5' : 'translate-x-1'}`} />
+                </div>
+                <div>
+                  <span className={`text-sm ${fixNamesProvider === "deepseek" &&
+                      (deepSeekWebSearchAvailable === null ||
+                        !deepSeekWebSearchAvailable)
+                      ? "text-zinc-600"
+                      : "text-zinc-400"}`}>
+                    Vyhledávat na webu
+                  </span>
+                  {fixNamesProvider === "deepseek" &&
                     (deepSeekWebSearchAvailable === null ||
-                      !deepSeekWebSearchAvailable)
-                  }
-                  onChange={(e) => onFixNamesWebChange(e.target.checked)}
-                  className="sr-only"
-                />
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${fixNamesWeb ? 'translate-x-5' : 'translate-x-1'}`} />
+                      !deepSeekWebSearchAvailable) && (
+                    <p className="text-xs text-amber-500">
+                      Vyžaduje PERPLEXITY_API_KEY nebo TAVILY_API_KEY
+                    </p>
+                  )}
+                </div>
+              </label>
+              <div className="group relative">
+                <svg className="h-4 w-4 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div className="absolute bottom-full left-1/2 mb-2 hidden -translate-x-1/2 rounded-lg bg-zinc-800 p-3 text-xs text-zinc-300 shadow-xl group-hover:block w-64">
+                  <p>Povolit webové vyhledávání pro ověření názvů firem a míst. Gemini používá Google Search, DeepSeek používá Perplexity nebo Tavily.</p>
+                </div>
               </div>
-              <div>
-                <span className={`text-sm ${fixNamesProvider === "deepseek" &&
-                    (deepSeekWebSearchAvailable === null ||
-                      !deepSeekWebSearchAvailable)
-                    ? "text-zinc-600"
-                    : "text-zinc-400"}`}>
-                  Vyhledávat na webu
-                </span>
-                {fixNamesProvider === "deepseek" &&
-                  (deepSeekWebSearchAvailable === null ||
-                    !deepSeekWebSearchAvailable) && (
-                  <p className="text-xs text-amber-500">
-                    Vyžaduje PERPLEXITY_API_KEY nebo TAVILY_API_KEY
-                  </p>
-                )}
-              </div>
-            </label>
+            </div>
             <p className="text-xs text-zinc-600">
               {fixNamesWeb
                 ? 'AI bude ověřovat názvy na webu pro vyšší přesnost'
@@ -181,14 +201,36 @@ export default function CorrectionPanel({
           placeholder="Např. Dopravní stavby Brno, ne Dopravni Stavby; ZEMAX, ne SEMAX..."
         />
       </label>
-      <button
-        type="button"
-        onClick={() => void onRunCorrection()}
-        disabled={correcting || lines.length === 0}
-        className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-40"
-      >
-        {correcting ? "Opravuji…" : "Opravit názvy"}
-      </button>
+      <div className="flex flex-wrap items-center gap-4">
+        <button
+          type="button"
+          onClick={() => void onRunCorrection()}
+          disabled={correcting || lines.length === 0}
+          className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-40 flex items-center gap-2"
+        >
+          {correcting ? (
+            <>
+              <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+              </svg>
+              Opravuji…
+            </>
+          ) : (
+            "Opravit názvy"
+          )}
+        </button>
+        {lines.length === 0 && (
+          <p className="text-sm text-amber-500">
+            Nejprve načti řádky z podkladu
+          </p>
+        )}
+        {correcting && (
+          <p className="text-sm text-zinc-500">
+            Může to trvat až 30 sekund…
+          </p>
+        )}
+      </div>
 
       {showCorrection && (
         <div className="mt-6 space-y-3">

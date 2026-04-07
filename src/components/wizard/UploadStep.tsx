@@ -74,7 +74,10 @@ export default function UploadStep({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-2">
-          <span className="text-sm text-zinc-400">Přepis z fotky</span>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-zinc-400">Přepis z fotky</span>
+            <span className="text-xs text-zinc-600 sm:hidden">Vyber model</span>
+          </div>
           <select
             value={provider}
             onChange={(e) =>
@@ -93,15 +96,15 @@ export default function UploadStep({
           <div className="space-y-1 text-xs text-zinc-500">
             <p className="flex items-start gap-1">
               <span className="mt-0.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-500/50"></span>
-              <span><strong>Gemini:</strong> cloudový model od Google, vyžaduje GEMINI_API_KEY</span>
+              <span className="flex-1"><strong>Gemini:</strong> cloudový model od Google, vyžaduje GEMINI_API_KEY</span>
             </p>
             <p className="flex items-start gap-1">
               <span className="mt-0.5 inline-block h-1.5 w-1.5 rounded-full bg-blue-500/50"></span>
-              <span><strong>DeepSeek:</strong> cloudový model, vyžaduje DEEPSEEK_API_KEY pro korekci názvů</span>
+              <span className="flex-1"><strong>DeepSeek:</strong> cloudový model, vyžaduje DEEPSEEK_API_KEY pro korekci názvů</span>
             </p>
             <p className="flex items-start gap-1">
               <span className="mt-0.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500/50"></span>
-              <span><strong>Ollama:</strong> lokální model, vyžaduje nainstalovaný Ollama a stažený vision model</span>
+              <span className="flex-1"><strong>Ollama:</strong> lokální model, vyžaduje nainstalovaný Ollama a stažený vision model</span>
             </p>
             <div className="mt-2 rounded border border-zinc-800 bg-zinc-900/50 p-2">
               <p className="text-xs text-zinc-400">
