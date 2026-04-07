@@ -11,14 +11,14 @@ const WEB_SEARCH_TOOLS: unknown[] = [
     function: {
       name: "web_search",
       description:
-        "Vyhledá na webu informace pro ověření správného zápisu českého názvu firmy, obce nebo místa.",
+        "Vyhledá na webu informace pro ověření správného zápisu českého názvu firmy, obce nebo místa. POUŽIJ: když si nejsi jistý přesným názvem nebo právní formou. Volej s přesným českým dotazem jako 'Dopravní stavby Brno s.r.o.' nebo 'obec Branišovice okres Vyškov'.",
       parameters: {
         type: "object",
         properties: {
           query: {
             type: "string",
             description:
-              "Krátký vyhledávací dotaz v češtině, např. „Dopravní stavby Brno s.r.o.“ nebo „obec Branišovice okres Vyškov“.",
+              "Krátký vyhledávací dotaz v češtině, např. „Dopravní stavby Brno s.r.o.“ nebo „obec Branišovice okres Vyškov“. Používej oficiální názvy bez překlepů.",
           },
         },
         required: ["query"],
@@ -41,10 +41,12 @@ export type CorrectNamesDeepSeekOptions = {
   webSearch?: (query: string) => Promise<string>;
   idokladStyle?: boolean;
   styleReference?: string;
+  /** Zapnout validaci čísel (litry × sazba = základ) */
+  validateNumbers?: boolean;
 };
 
 type ChatMessage =
-  | { role: "user"; content: string }
+  | { role: "system" | "user"; content: string }
   | {
       role: "assistant";
       content: string | null;
@@ -56,10 +58,15 @@ type ChatMessage =
     }
   | { role: "tool"; tool_call_id: string; content: string };
 
-const MAX_TOOL_ROUNDS = 14;
+const MAX_TOOL_ROUNDS = 20; // Zvýšeno pro důkladné ověřování
 
 /**
  * Korekce názvů přes DeepSeek API (OpenAI-kompatibilní chat).
+ * 
+ * Nová verze s robustním promptem pro:
+ * - Systematické ověřování názvů na webu
+ * - Zachování původních nejistých názvů
+ * - Validaci čísel
  */
 export async function correctTripLineDescriptionsDeepSeek(
   lines: TripLine[],
@@ -87,6 +94,7 @@ export async function correctTripLineDescriptionsDeepSeek(
     userInstructions: opts.userInstructions,
     idokladStyle: opts.idokladStyle,
     styleReference: opts.styleReference,
+    validateNumbers: opts.validateNumbers,
   });
 
   const text = await deepSeekChatOnce(base, model, opts.apiKey, [
@@ -103,12 +111,12 @@ async function correctWithWebTools(
   model: string,
 ): Promise<TripLine[]> {
   const userPrompt = buildCorrectNamesUserPrompt(lines, {
-    useWebSearch: false,
     useWebSearchTools: true,
     rawTranscript: opts.rawTranscript,
     userInstructions: opts.userInstructions,
     idokladStyle: opts.idokladStyle,
     styleReference: opts.styleReference,
+    validateNumbers: opts.validateNumbers,
   });
 
   const messages: ChatMessage[] = [{ role: "user", content: userPrompt }];
@@ -120,14 +128,17 @@ async function correctWithWebTools(
       tool_choice: "auto",
     });
 
+    // AI volá web_search pro ověření názvů
     if (msg.tool_calls?.length) {
       messages.push({
         role: "assistant",
         content: msg.content ?? null,
         tool_calls: msg.tool_calls,
       });
+      
       for (const tc of msg.tool_calls) {
         let snippet = "(Neznámý nástroj.)";
+        
         if (tc.function?.name === "web_search") {
           let args: { query?: string };
           try {
@@ -137,11 +148,21 @@ async function correctWithWebTools(
           } catch {
             args = {};
           }
+          
           const q = typeof args.query === "string" ? args.query.trim() : "";
-          snippet = q
-            ? (await webSearch(q)).slice(0, 14_000)
-            : "(Prázdný dotaz pro web_search.)";
+          
+          if (q) {
+            try {
+              // Načíst více kontextu pro lepší verifikaci
+              snippet = (await webSearch(q)).slice(0, 16_000);
+            } catch (e) {
+              snippet = `Chyba při vyhledávání: ${(e as Error).message}`;
+            }
+          } else {
+            snippet = "(Prázdný dotaz pro web_search.)";
+          }
         }
+        
         messages.push({
           role: "tool",
           tool_call_id: tc.id,
@@ -151,10 +172,12 @@ async function correctWithWebTools(
       continue;
     }
 
+    // AI vrací finální JSON
     const text = msg.content;
     if (!text?.trim()) {
       throw new Error("DeepSeek (korekce názvů) vrátil prázdnou odpověď.");
     }
+    
     return parseCorrectionJson(lines, text);
   }
 
@@ -202,7 +225,7 @@ async function deepSeekChatMessage(
     body: JSON.stringify({
       model,
       messages,
-      temperature: 0.2,
+      temperature: 0.1, // Nižší teplota pro přesnost
       ...extras,
     }),
   });

@@ -27,6 +27,10 @@ function parseArgs(argv: string[]): {
       provider = "ollama";
       continue;
     }
+    if (a === "--deepseek") {
+      provider = "deepseek";
+      continue;
+    }
     if (a === "--fix-names") {
       fixNames = true;
       continue;
@@ -38,8 +42,8 @@ function parseArgs(argv: string[]): {
     }
     if (a === "--provider" && argv[i + 1]) {
       const p = argv[++i];
-      if (p !== "gemini" && p !== "ollama") {
-        throw new Error('--provider musí být "gemini" nebo "ollama"');
+      if (p !== "gemini" && p !== "ollama" && p !== "deepseek") {
+        throw new Error('--provider musí být "gemini", "ollama" nebo "deepseek"');
       }
       provider = p;
       continue;
@@ -55,7 +59,7 @@ function parseArgs(argv: string[]): {
 
 function defaultProviderFromEnv(): VisionProvider | null {
   const p = process.env.VISION_PROVIDER?.toLowerCase();
-  if (p === "gemini" || p === "ollama") return p;
+  if (p === "gemini" || p === "ollama" || p === "deepseek") return p;
   return null;
 }
 
@@ -106,7 +110,7 @@ async function main() {
       provider ?? defaultProviderFromEnv() ?? inferProviderFromEnv();
     if (!p) {
       console.error(
-        "Pro obrázek nastav provider: --gemini | --ollama nebo VISION_PROVIDER=gemini|ollama",
+        "Pro obrázek nastav provider: --gemini | --ollama | --deepseek nebo VISION_PROVIDER=gemini|ollama|deepseek",
       );
       process.exit(1);
     }
@@ -163,6 +167,7 @@ async function main() {
 
 function inferProviderFromEnv(): VisionProvider | null {
   if (process.env.GEMINI_API_KEY) return "gemini";
+  if (process.env.DEEPSEEK_API_KEY) return "deepseek";
   if (process.env.OLLAMA_VISION_MODEL) return "ollama";
   return null;
 }
@@ -182,7 +187,11 @@ Použití:
     set OLLAMA_VISION_MODEL=llava
     npx tsx src/index.ts --ollama sken.jpg
 
-Volitelně: VISION_PROVIDER=gemini|ollama v .env
+  Foto (DeepSeek, cloud – stejný klíč jako korekce):
+    set DEEPSEEK_API_KEY=...
+    npx tsx src/index.ts --deepseek sken.jpg
+
+Volitelně: VISION_PROVIDER=gemini|ollama|deepseek v .env
 
   Korekce názvů firem (Gemini, po parsování):
     npx tsx src/index.ts --fix-names podklad.txt

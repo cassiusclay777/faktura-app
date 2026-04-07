@@ -1,8 +1,14 @@
 import { loadImageAsBase64, loadImageBufferAsBase64 } from "./imageFile.js";
 import { transcribeWithGemini } from "./geminiVision.js";
 import { transcribeWithOllama } from "./ollamaVision.js";
+import { transcribeDeepSeekPathFromImage } from "./deepseekVisionOcr.js";
 
-export type VisionProvider = "gemini" | "ollama";
+export {
+  hasDeepSeekVisionOcrCredentials,
+  resolveDeepSeekVisionOcrApiKey,
+} from "./deepseekVisionOcr.js";
+
+export type VisionProvider = "gemini" | "ollama" | "deepseek";
 
 export type TranscribeOptions = {
   imagePath: string;
@@ -21,10 +27,11 @@ function env(name: string): string | undefined {
 }
 
 /**
- * Přepis ručně psaného listu z fotky – Gemini (cloud) nebo Ollama (lokálně).
+ * Přepis ručně psaného listu z fotky – Gemini (cloud), DeepSeek (cloud) nebo Ollama (lokálně).
  *
  * Env:
  * - Gemini: GEMINI_API_KEY, volitelně GEMINI_MODEL (default gemini-2.5-flash)
+ * - DeepSeek (jen OCR z fotky): DEEPSEEK_VISION_API_BASE + klíč (DEEPSEEK_VISION_API_KEY / OPENROUTER_API_KEY / OPENAI_API_KEY), volitelně DEEPSEEK_VISION_MODEL (default gpt-4o-mini). Oficiální api.deepseek.com obrázky nepodporuje.
  * - Ollama: OLLAMA_BASE_URL (default http://127.0.0.1:11434), OLLAMA_VISION_MODEL (povinné, např. llava)
  */
 async function transcribeWithProvider(
@@ -33,9 +40,9 @@ async function transcribeWithProvider(
   provider: VisionProvider,
 ): Promise<string> {
   const m = mimeType.split(";")[0]?.trim().toLowerCase() ?? mimeType;
-  if (m === "application/pdf" && provider === "ollama") {
+  if (m === "application/pdf" && (provider === "ollama" || provider === "deepseek")) {
     throw new Error(
-      "Skenované PDF (bez textové vrstvy) přes Ollama nepodporujeme – v UI zvol Gemini, nebo nahraj stránku jako obrázek.",
+      "Interní chyba: skenované PDF musí být před OCR převedeno na obrázek (první stránka). Zkus znovu nahrát soubor.",
     );
   }
   if (provider === "gemini") {
@@ -51,6 +58,10 @@ async function transcribeWithProvider(
       mimeType,
       base64,
     });
+  }
+
+  if (provider === "deepseek") {
+    return transcribeDeepSeekPathFromImage(mimeType, base64);
   }
 
   const model = env("OLLAMA_VISION_MODEL");

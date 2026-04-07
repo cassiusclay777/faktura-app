@@ -22,10 +22,17 @@ export type CorrectNamesOptions = {
   /** Styl řádků jako na vydané faktuře z iDokladu (vestavěný nebo vlastní vzor) */
   idokladStyle?: boolean;
   styleReference?: string;
+  /** Zapnout validaci čísel (litry × sazba = základ) */
+  validateNumbers?: boolean;
 };
 
 /**
- * Opraví pouze pole `description` u řádků; čísla nechá beze změny.
+ * Korekce názvů přes Gemini API s Google Search grounding.
+ * 
+ * Nová verze používá robustní prompt s:
+ * - Systematickým ověřováním na webu
+ * - Zachováním původních nejistých názvů
+ * - Validací čísel (litry × sazba = základ)
  */
 export async function correctTripLineDescriptions(
   lines: TripLine[],
@@ -42,6 +49,7 @@ export async function correctTripLineDescriptions(
     userInstructions: opts.userInstructions,
     idokladStyle: opts.idokladStyle,
     styleReference: opts.styleReference,
+    validateNumbers: opts.validateNumbers,
   });
 
   const model = genAI.getGenerativeModel({
@@ -51,6 +59,7 @@ export async function correctTripLineDescriptions(
 
   const result = await model.generateContent(userPrompt);
   const text = result.response.text();
+  
   if (!text?.trim()) {
     throw new Error("Gemini (korekce názvů) vrátil prázdnou odpověď.");
   }

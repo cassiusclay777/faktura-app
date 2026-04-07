@@ -119,7 +119,6 @@ export default function InvoiceStep({
       <CorrectionPanel
         lines={lines}
         originalLines={originalLines}
-        rawTranscript={rawTranscript}
         fixNamesProvider={fixNamesProvider}
         onFixNamesProviderChange={onFixNamesProviderChange}
         fixNamesWeb={fixNamesWeb}

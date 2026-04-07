@@ -6,7 +6,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "clean": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\"",
+    "clean": "node -e \"const fs=require('node:fs'); fs.rmSync('.next',{recursive:true,force:true}); fs.rmSync('tsconfig.tsbuildinfo',{force:true});\"",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -14,11 +14,14 @@
     "test": "npm --prefix invoice-assistant run test"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^0.1.80",
     "@tailwindcss/postcss": "^4",
     "dotenv": "^17.4.1",
     "invoice-assistant": "file:./invoice-assistant",
     "next": "15.5.14",
     "pdf-parse": "^1.1.4",
+    "pdfjs-dist": "^4.10.38",
+    "pdfmake": "^0.3.7",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "tailwindcss": "^4",
@@ -26,6 +29,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@pdfme/common": "^6.0.6",
     "@types/node": "^20.19.39",
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "19.2.14",

@@ -6,6 +6,8 @@
         "redhat.vscode-yaml",
         "wakatime.vscode-wakatime",
         "localstack.localstack",
-        "sst-dev.opencode"
+        "sst-dev.opencode",
+        "supabase.postgrestools",
+        "dbaeumer.vscode-eslint"
     ]
 }

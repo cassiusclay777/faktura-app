@@ -12,6 +12,10 @@ export type {
   TranscribeOptions,
   TranscribeBufferOptions,
 } from "./ocr/visionTranscribe.js";
+export {
+  hasDeepSeekVisionOcrCredentials,
+  resolveDeepSeekVisionOcrApiKey,
+} from "./ocr/visionTranscribe.js";
 export { correctTripLineDescriptions } from "./ocr/correctNamesGemini.js";
 export type { CorrectNamesOptions } from "./ocr/correctNamesGemini.js";
 export { correctTripLineDescriptionsDeepSeek } from "./ocr/correctNamesDeepSeek.js";

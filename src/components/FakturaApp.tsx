@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ParsedPodklad } from "invoice-assistant";
 import {
   DEFAULT_VAT_PERCENT,
@@ -78,7 +78,9 @@ export default function FakturaApp() {
   const [lines, setLines] = useState<EditableInvoiceLine[]>([]);
   const [rawTranscript, setRawTranscript] = useState("");
   const [pasteText, setPasteText] = useState("");
-  const [provider, setProvider] = useState<"gemini" | "ollama">("gemini");
+  const [provider, setProvider] = useState<"gemini" | "ollama" | "deepseek">(
+    "gemini",
+  );
   const [fixNamesWeb, setFixNamesWeb] = useState(false);
   const [fixNamesProvider, setFixNamesProvider] = useState<
     "gemini" | "deepseek"
@@ -101,6 +103,8 @@ export default function FakturaApp() {
   const [aresLoading, setAresLoading] = useState<"supplier" | "customer" | null>(
     null,
   );
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const templateFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const refreshHistory = useCallback(() => {
     setHistoryItems(loadInvoiceHistory());
@@ -140,6 +144,17 @@ export default function FakturaApp() {
       setFixNamesWeb(false);
     }
   }, [fixNamesProvider, deepSeekWebSearchAvailable]);
+
+  useEffect(() => {
+    // Pokud je DeepSeek vybrán jako provider v autoFixSettings a web search není dostupný,
+    // automaticky vypneme web search v autoFixSettings
+    if (autoFixSettings.provider === "deepseek" && deepSeekWebSearchAvailable === false) {
+      setAutoFixSettings(prev => ({
+        ...prev,
+        useWeb: false
+      }));
+    }
+  }, [autoFixSettings.provider, deepSeekWebSearchAvailable]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -267,6 +282,35 @@ export default function FakturaApp() {
     }
   }, [header, lines, vatPercent]);
 
+  const applyHeaderTemplate = useCallback(
+    async (file: File) => {
+      setError(null);
+      setTemplateLoading(true);
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("provider", provider);
+        const res = await fetch("/api/template-header", { method: "POST", body: fd });
+        const data = await readJsonResponse<{
+          error?: string;
+          header?: Partial<InvoiceHeader>;
+        }>(res);
+        if (!res.ok) {
+          throw new Error(data.error ?? `HTTP ${res.status}`);
+        }
+        if (!data.header) {
+          throw new Error("Ze vzoru se nepodařilo získat hlavičku faktury.");
+        }
+        setHeader((h) => ({ ...h, ...data.header }));
+      } catch (e) {
+        setError(formatUnknownError(e));
+      } finally {
+        setTemplateLoading(false);
+      }
+    },
+    [provider],
+  );
+
   const processPodklad = useCallback(
     async (file: File | null) => {
       setError(null);
@@ -305,7 +349,13 @@ export default function FakturaApp() {
             fd2.append("provider", provider);
             fd2.append("fixNames", "true");
             fd2.append("fixNamesProvider", autoFixSettings.provider);
-            fd2.append("fixNamesWeb", String(autoFixSettings.useWeb));
+            
+            // Pokud je DeepSeek a web search není dostupný, vypneme web search
+            const useWebSearch = autoFixSettings.provider === "deepseek" && deepSeekWebSearchAvailable === false
+              ? false
+              : autoFixSettings.useWeb;
+            
+            fd2.append("fixNamesWeb", String(useWebSearch));
             fd2.append("fixNamesIdokladStyle", String(autoFixSettings.idokladStyle));
             if (autoFixSettings.styleReference.trim()) {
               fd2.append("styleReference", autoFixSettings.styleReference.trim());
@@ -317,21 +367,31 @@ export default function FakturaApp() {
               parsed?: ParsedPodklad;
             }>(res2);
             if (!res2.ok) {
-              throw new Error(
-                data2.error ?? (res2.statusText || `HTTP ${res2.status}`),
-              );
+              if (res2.status === 503) {
+                console.warn(
+                  "Auto-fix názvů přeskočen: Gemini je dočasně přetížené (503).",
+                );
+              } else {
+                throw new Error(
+                  data2.error ?? (res2.statusText || `HTTP ${res2.status}`),
+                );
+              }
             }
-            if (data2.parsed) {
+            if (res2.ok && data2.parsed) {
               const correctedLines = tripLinesToEditable(data2.parsed.lines);
               setLines(correctedLines);
               setShowCorrection(true);
             }
-          } catch (e) {
-            // Korekce selhala – necháme původní parsing
-            console.error("Auto-fix selhal:", e);
-          } finally {
-            setCorrecting(false);
-          }
+           } catch (e) {
+             // Korekce selhala – necháme původní parsing
+             console.error("Auto-fix selhal:", e);
+             // Zobrazíme uživatelsky přívětivou chybu pro chybějící web search konfiguraci
+             if (e instanceof Error && e.message.includes("PERPLEXITY_API_KEY") && e.message.includes("TAVILY_API_KEY")) {
+               console.warn("Web search není nakonfigurován. Pro DeepSeek web search nastav PERPLEXITY_API_KEY nebo TAVILY_API_KEY v .env.");
+             }
+           } finally {
+             setCorrecting(false);
+           }
         }
 
         setTab("faktura");
@@ -341,7 +401,7 @@ export default function FakturaApp() {
         setLoading(false);
       }
     },
-    [pasteText, provider, autoFixSettings],
+    [pasteText, provider, autoFixSettings, deepSeekWebSearchAvailable],
   );
 
   const runCorrection = useCallback(async () => {
@@ -355,7 +415,13 @@ export default function FakturaApp() {
       fd.append("provider", provider);
       fd.append("fixNames", "true");
       fd.append("fixNamesProvider", fixNamesProvider);
-      fd.append("fixNamesWeb", String(fixNamesWeb));
+      
+      // Pokud je DeepSeek a web search není dostupný, vypneme web search
+      const useWebSearch = fixNamesProvider === "deepseek" && deepSeekWebSearchAvailable === false
+        ? false
+        : fixNamesWeb;
+      
+      fd.append("fixNamesWeb", String(useWebSearch));
       fd.append("fixNamesIdokladStyle", String(autoFixSettings.idokladStyle));
       if (autoFixSettings.styleReference.trim()) {
         fd.append("styleReference", autoFixSettings.styleReference.trim());
@@ -389,12 +455,72 @@ export default function FakturaApp() {
     provider,
     autoFixSettings.idokladStyle,
     autoFixSettings.styleReference,
+    deepSeekWebSearchAvailable,
+  ]);
+
+  const runFinalPreviewCorrection = useCallback(async () => {
+    if (lines.length === 0) return;
+    setError(null);
+    setCorrecting(true);
+    setOriginalLines(lines);
+    try {
+      const fd = new FormData();
+      fd.append("rawText", rawTranscript);
+      fd.append("provider", provider);
+      fd.append("fixNames", "true");
+      fd.append("fixNamesProvider", fixNamesProvider);
+      const useWebSearch =
+        fixNamesProvider === "deepseek" && deepSeekWebSearchAvailable === false
+          ? false
+          : fixNamesWeb;
+      fd.append("fixNamesWeb", String(useWebSearch));
+      fd.append("fixNamesIdokladStyle", "true");
+      if (autoFixSettings.styleReference.trim()) {
+        fd.append("styleReference", autoFixSettings.styleReference.trim());
+      }
+      if (userInstructions.trim()) {
+        fd.append("userInstructions", userInstructions.trim());
+      }
+
+      const res = await fetch("/api/process", { method: "POST", body: fd });
+      const data = await readJsonResponse<{
+        error?: string;
+        parsed?: ParsedPodklad;
+      }>(res);
+      if (!res.ok) {
+        throw new Error(data.error ?? (res.statusText || `HTTP ${res.status}`));
+      }
+      if (!data.parsed) throw new Error("Neočekávaná odpověď serveru.");
+      setLines(tripLinesToEditable(data.parsed.lines));
+      setShowCorrection(true);
+    } catch (e) {
+      setError(formatUnknownError(e));
+    } finally {
+      setCorrecting(false);
+    }
+  }, [
+    lines,
+    rawTranscript,
+    provider,
+    fixNamesProvider,
+    deepSeekWebSearchAvailable,
+    fixNamesWeb,
+    autoFixSettings.styleReference,
+    userInstructions,
   ]);
 
   const updateLine = (id: string, patch: Partial<EditableInvoiceLine>) => {
     setLines((prev) =>
       prev.map((l) => (l.id === id ? { ...l, ...patch } : l)),
     );
+  };
+
+  const shiftLineYear = (id: string, dateIso: string, deltaYears: number) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateIso);
+    if (!m) return;
+    const y = Number(m[1]) + deltaYears;
+    const nextIso = `${String(y).padStart(4, "0")}-${m[2]}-${m[3]}`;
+    updateLine(id, { dateIso: nextIso });
   };
 
   const removeLine = (id: string) => {
@@ -502,6 +628,42 @@ export default function FakturaApp() {
                   ))}
                 </ul>
               )}
+            </div>
+
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-medium text-zinc-300">
+                    Načíst hlavičku ze vzorové faktury
+                  </h3>
+                  <p className="text-xs text-zinc-500">
+                    Nahraj starší fakturu (PDF/obrázek) a AI předvyplní dodavatele a odběratele.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => templateFileInputRef.current?.click()}
+                  disabled={templateLoading}
+                  className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 hover:bg-zinc-900 disabled:opacity-50"
+                >
+                  {templateLoading ? "Zpracovávám vzor…" : "Vybrat vzorovou fakturu"}
+                </button>
+              </div>
+              <input
+                ref={templateFileInputRef}
+                type="file"
+                accept=".pdf,image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                aria-label="Vybrat vzorovou fakturu"
+                title="Vybrat vzorovou fakturu"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) {
+                    void applyHeaderTemplate(f);
+                  }
+                  e.currentTarget.value = "";
+                }}
+              />
             </div>
 
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
@@ -799,8 +961,36 @@ export default function FakturaApp() {
                 <tbody>
                   {lines.map((line) => (
                     <tr key={line.id} className="border-b border-zinc-800/80">
-                      <td className="py-2 align-top text-zinc-500 whitespace-nowrap">
-                        {formatDateCz(line.dateIso)}
+                      <td className="py-2 pr-2 align-top">
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => shiftLineYear(line.id, line.dateIso, -1)}
+                            aria-label="Odečíst rok"
+                            title="Odečíst 1 rok"
+                            className="rounded border border-zinc-700 px-1.5 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800"
+                          >
+                            -1r
+                          </button>
+                          <input
+                            type="date"
+                            value={line.dateIso}
+                            onChange={(e) =>
+                              updateLine(line.id, { dateIso: e.target.value })
+                            }
+                            aria-label="Datum"
+                            className="w-36 rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-300"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => shiftLineYear(line.id, line.dateIso, 1)}
+                            aria-label="Přičíst rok"
+                            title="Přičíst 1 rok"
+                            className="rounded border border-zinc-700 px-1.5 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800"
+                          >
+                            +1r
+                          </button>
+                        </div>
                       </td>
                       <td className="py-2 pr-2 align-top">
                         <textarea
@@ -1087,6 +1277,34 @@ export default function FakturaApp() {
                   app.idoklad.cz/…/Create
                 </a>
               </p>
+            </div>
+            <div className="print:hidden rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+              <h3 className="text-sm font-medium text-zinc-300">
+                Finální AI korekce názvů (před vystavením)
+              </h3>
+              <p className="mt-1 text-xs text-zinc-500">
+                Tohle tlačítko vynutí iDoklad formát řádků a pokusí se dočistit názvy firem.
+              </p>
+              <label className="mt-3 block space-y-1">
+                <span className="text-xs text-zinc-500">Instrukce pro AI (volitelné)</span>
+                <textarea
+                  value={userInstructions}
+                  onChange={(e) => setUserInstructions(e.target.value)}
+                  rows={2}
+                  placeholder="Např. oprav názvy firem přesně podle registru ARES, zachovej iDoklad styl."
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm placeholder:text-zinc-600"
+                />
+              </label>
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => void runFinalPreviewCorrection()}
+                  disabled={correcting || lines.length === 0}
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-40"
+                >
+                  {correcting ? "Koriguji názvy…" : "AI finální korekce názvů"}
+                </button>
+              </div>
             </div>
             {idokladExportHint && (
               <p

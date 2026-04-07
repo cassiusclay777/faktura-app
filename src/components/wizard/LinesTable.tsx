@@ -1,7 +1,7 @@
 "use client";
 
 import type { EditableInvoiceLine } from "@/lib/invoice";
-import { formatDateCz, formatMoneyCz, totalsFromLines } from "@/lib/invoice";
+import { formatMoneyCz, totalsFromLines } from "@/lib/invoice";
 
 interface LinesTableProps {
   lines: EditableInvoiceLine[];
@@ -17,6 +17,14 @@ export default function LinesTable({
   vatPercent,
 }: LinesTableProps) {
   const totals = totalsFromLines(lines, vatPercent);
+
+  const shiftLineYear = (id: string, dateIso: string, deltaYears: number) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateIso);
+    if (!m) return;
+    const y = Number(m[1]) + deltaYears;
+    const nextIso = `${String(y).padStart(4, "0")}-${m[2]}-${m[3]}`;
+    onUpdateLine(id, { dateIso: nextIso });
+  };
 
   return (
     <>
@@ -38,8 +46,36 @@ export default function LinesTable({
           <tbody>
             {lines.map((line) => (
               <tr key={line.id} className="border-b border-zinc-800/80">
-                <td className="py-2 align-top text-zinc-500 whitespace-nowrap">
-                  {formatDateCz(line.dateIso)}
+                <td className="py-2 pr-2 align-top">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => shiftLineYear(line.id, line.dateIso, -1)}
+                      aria-label="Odečíst rok"
+                      title="Odečíst 1 rok"
+                      className="rounded border border-zinc-700 px-1.5 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800"
+                    >
+                      -1r
+                    </button>
+                    <input
+                      type="date"
+                      value={line.dateIso}
+                      onChange={(e) =>
+                        onUpdateLine(line.id, { dateIso: e.target.value })
+                      }
+                      aria-label="Datum"
+                      className="w-36 rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-300"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => shiftLineYear(line.id, line.dateIso, 1)}
+                      aria-label="Přičíst rok"
+                      title="Přičíst 1 rok"
+                      className="rounded border border-zinc-700 px-1.5 py-1 text-[11px] text-zinc-400 hover:bg-zinc-800"
+                    >
+                      +1r
+                    </button>
+                  </div>
                 </td>
                 <td className="py-2 pr-2 align-top">
                   <textarea

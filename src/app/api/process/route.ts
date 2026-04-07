@@ -4,6 +4,7 @@ import {
   transcribeHandwritingFromBuffer,
   correctTripLineDescriptions,
   correctTripLineDescriptionsDeepSeek,
+  hasDeepSeekVisionOcrCredentials,
 } from "invoice-assistant";
 import type { VisionProvider } from "invoice-assistant";
 import { extractTextFromPdfBuffer } from "@/lib/extractPdfText";
@@ -17,6 +18,57 @@ loadServerEnv();
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
+
+const RETRY_DELAYS_MS = [700, 1500];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableGeminiError(e: unknown): boolean {
+  const message = e instanceof Error ? e.message : String(e);
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("429") ||
+    normalized.includes("retry in") ||
+    normalized.includes("rate limit") ||
+    normalized.includes("too many requests") ||
+    normalized.includes("503") ||
+    normalized.includes("service unavailable") ||
+    normalized.includes("high demand") ||
+    (normalized.includes("vision ocr") &&
+      (normalized.includes("429") ||
+        normalized.includes("502") ||
+        normalized.includes("503")))
+  );
+}
+
+function isGeminiQuotaExceededError(e: unknown): boolean {
+  const message = e instanceof Error ? e.message : String(e);
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("quota exceeded") ||
+    normalized.includes("free_tier_requests") ||
+    normalized.includes("perday") ||
+    (normalized.includes("429") && normalized.includes("billing"))
+  );
+}
+
+async function retryGemini<T>(fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      if (!isRetryableGeminiError(e) || attempt === RETRY_DELAYS_MS.length) {
+        throw e;
+      }
+      await sleep(RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  throw lastError;
+}
 
 function isTxtName(name: string): boolean {
   return /\.txt$/i.test(name);
@@ -38,7 +90,18 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const rawTextField = formData.get("rawText");
     const file = formData.get("file");
-    const provider = (formData.get("provider") as string) || "gemini";
+    const rawVisionProvider = (formData.get("provider") as string) || "gemini";
+    if (
+      rawVisionProvider !== "gemini" &&
+      rawVisionProvider !== "ollama" &&
+      rawVisionProvider !== "deepseek"
+    ) {
+      return NextResponse.json(
+        { error: 'Parametr provider musí být "gemini", "ollama" nebo "deepseek".' },
+        { status: 400 },
+      );
+    }
+    const provider = rawVisionProvider;
     const fixNames = formData.get("fixNames") === "true";
     const fixNamesWeb = formData.get("fixNamesWeb") === "true";
     const fixNamesProvider =
@@ -67,18 +130,57 @@ export async function POST(req: NextRequest) {
         if (extracted) {
           text = extracted;
         } else {
-          text = await transcribeHandwritingFromBuffer({
-            buffer: buf,
-            mimeType: "application/pdf",
-            provider: provider as VisionProvider,
-          });
+          const vision = provider as VisionProvider;
+          if (provider === "deepseek" && !hasDeepSeekVisionOcrCredentials()) {
+            return NextResponse.json(
+              {
+                error:
+                  "Skenované PDF s volbou DeepSeek vyžaduje OpenAI-kompatibilní vision API: nastav DEEPSEEK_VISION_API_BASE a OPENROUTER_API_KEY (nebo OPENAI_API_KEY / DEEPSEEK_VISION_API_KEY). Nebo u „Přepis z fotky“ zvol Gemini.",
+              },
+              { status: 400 },
+            );
+          }
+
+          let vBuf: Buffer = buf;
+          let vMime = "application/pdf";
+          if (provider === "ollama" || provider === "deepseek") {
+            const { renderPdfFirstPageToPngBuffer } =
+              await import("@/lib/pdfFirstPagePng");
+            vBuf = Buffer.from(await renderPdfFirstPageToPngBuffer(buf));
+            vMime = "image/png";
+          }
+
+          text =
+            provider === "gemini" || provider === "deepseek"
+              ? await retryGemini(() =>
+                  transcribeHandwritingFromBuffer({
+                    buffer: vBuf,
+                    mimeType: vMime,
+                    provider: vision,
+                  }),
+                )
+              : await transcribeHandwritingFromBuffer({
+                  buffer: vBuf,
+                  mimeType: vMime,
+                  provider: vision,
+                });
         }
       } else if (isImageMime(file.type)) {
-        text = await transcribeHandwritingFromBuffer({
-          buffer: buf,
-          mimeType: file.type,
-          provider: provider as VisionProvider,
-        });
+        const vision = provider as VisionProvider;
+        text =
+          provider === "gemini" || provider === "deepseek"
+            ? await retryGemini(() =>
+                transcribeHandwritingFromBuffer({
+                  buffer: buf,
+                  mimeType: file.type,
+                  provider: vision,
+                }),
+              )
+            : await transcribeHandwritingFromBuffer({
+                buffer: buf,
+                mimeType: file.type,
+                provider: vision,
+              });
       } else {
         return NextResponse.json(
           {
@@ -150,15 +252,17 @@ export async function POST(req: NextRequest) {
             { status: 400 },
           );
         }
-        corrected = await correctTripLineDescriptions(parsed.lines, {
-          apiKey: key,
-          model: process.env.GEMINI_MODEL,
-          useWebSearch: fixNamesWeb,
-          rawTranscript: text,
-          userInstructions,
-          idokladStyle: fixNamesIdokladStyle,
-          styleReference,
-        });
+        corrected = await retryGemini(() =>
+          correctTripLineDescriptions(parsed.lines, {
+            apiKey: key,
+            model: process.env.GEMINI_MODEL,
+            useWebSearch: fixNamesWeb,
+            rawTranscript: text,
+            userInstructions,
+            idokladStyle: fixNamesIdokladStyle,
+            styleReference,
+          }),
+        );
       }
       parsed = {
         lines: corrected,
@@ -172,6 +276,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ rawTranscript: text, parsed });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
+    if (isGeminiQuotaExceededError(e)) {
+      return NextResponse.json(
+        {
+          error:
+            "Gemini narazilo na denní kvótu (429). Přepni provider korekce na DeepSeek, nebo počkej na obnovu limitu.",
+        },
+        { status: 429 },
+      );
+    }
+    if (isRetryableGeminiError(e)) {
+      return NextResponse.json(
+        {
+          error:
+            "Gemini je dočasně přetížené nebo limitované (429/503). Zkus to za pár sekund, případně přepni korekci na DeepSeek.",
+        },
+        { status: 429 },
+      );
+    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
