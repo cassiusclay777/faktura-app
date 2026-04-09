@@ -5,8 +5,6 @@ import DropZone from "@/components/DropZone";
 
 export interface AutoFixSettings {
   enabled: boolean;
-  provider: "gemini" | "deepseek";
-  useWeb: boolean;
   idokladStyle: boolean;
   styleReference: string;
 }
@@ -14,12 +12,11 @@ export interface AutoFixSettings {
 interface UploadStepProps {
   pasteText: string;
   onPasteTextChange: (text: string) => void;
-  provider: "gemini" | "ollama" | "deepseek";
-  onProviderChange: (provider: "gemini" | "ollama" | "deepseek") => void;
+  provider: "ollama" | "deepseek";
+  onProviderChange: (provider: "ollama" | "deepseek") => void;
   autoFixSettings: AutoFixSettings;
   onAutoFixSettingsChange: (settings: AutoFixSettings) => void;
   loading: boolean;
-  deepSeekWebSearchAvailable: boolean | null;
   onProcess: (file: File | null) => Promise<void>;
 }
 
@@ -31,7 +28,6 @@ export default function UploadStep({
   autoFixSettings,
   onAutoFixSettingsChange,
   loading,
-  deepSeekWebSearchAvailable,
   onProcess,
 }: UploadStepProps) {
   const handleFileSelected = useCallback(
@@ -79,15 +75,16 @@ export default function UploadStep({
             <span className="text-xs text-zinc-600 sm:hidden">Vyber model</span>
           </div>
           <select
+            aria-label="Model pro přepis z fotky (OCR)"
+            title="Model pro přepis z fotky (OCR)"
             value={provider}
             onChange={(e) =>
               onProviderChange(
-                e.target.value as "gemini" | "ollama" | "deepseek",
+                e.target.value as "ollama" | "deepseek",
               )
             }
             className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
           >
-            <option value="gemini">Gemini (cloud, GEMINI_API_KEY)</option>
             <option value="deepseek">
               DeepSeek (cloud, DEEPSEEK_API_KEY)
             </option>
@@ -95,12 +92,8 @@ export default function UploadStep({
           </select>
           <div className="space-y-1 text-xs text-zinc-500">
             <p className="flex items-start gap-1">
-              <span className="mt-0.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-500/50"></span>
-              <span className="flex-1"><strong>Gemini:</strong> cloudový model od Google, vyžaduje GEMINI_API_KEY</span>
-            </p>
-            <p className="flex items-start gap-1">
               <span className="mt-0.5 inline-block h-1.5 w-1.5 rounded-full bg-blue-500/50"></span>
-              <span className="flex-1"><strong>DeepSeek:</strong> cloudový model, vyžaduje DEEPSEEK_API_KEY pro korekci názvů</span>
+              <span className="flex-1"><strong>DeepSeek:</strong> OCR z fotky/PDF přes stejný účet jako korekce názvů (DEEPSEEK_API_KEY)</span>
             </p>
             <p className="flex items-start gap-1">
               <span className="mt-0.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500/50"></span>
@@ -108,7 +101,7 @@ export default function UploadStep({
             </p>
             <div className="mt-2 rounded border border-zinc-800 bg-zinc-900/50 p-2">
               <p className="text-xs text-zinc-400">
-                <strong>Poznámka k DeepSeek:</strong> Pro OCR z obrázků je potřeba nastavit DEEPSEEK_VISION_API_BASE a OPENROUTER_API_KEY (nebo OPENAI_API_KEY). Korekce názvů používá standardní DEEPSEEK_API_KEY.
+                <strong>Poznámka k DeepSeek:</strong> Pro OCR z obrázků stačí DEEPSEEK_API_KEY; volitelně můžeš nastavit DEEPSEEK_VISION_API_KEY. Endpoint bere DEEPSEEK_VISION_API_BASE, jinak DEEPSEEK_API_BASE (default https://api.deepseek.com/v1).
               </p>
             </div>
           </div>
@@ -143,77 +136,13 @@ export default function UploadStep({
         
         {autoFixSettings.enabled && (
           <div className="space-y-4 border-t border-zinc-800 pt-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <label className="block text-xs font-medium text-zinc-500">
-                  Model pro korekci
-                </label>
-                <select
-                  value={autoFixSettings.provider}
-                  onChange={(e) =>
-                    onAutoFixSettingsChange({
-                      ...autoFixSettings,
-                      provider: e.target.value as "gemini" | "deepseek",
-                    })
-                  }
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
-                >
-                  <option value="gemini">Gemini + Google Search</option>
-                  <option value="deepseek">DeepSeek + web (Perplexity / Tavily)</option>
-                </select>
-                <p className="text-xs text-zinc-600">
-                  {autoFixSettings.provider === 'gemini' 
-                    ? 'Používá Google Search pro ověření názvů' 
-                    : 'Používá Perplexity nebo Tavily pro webové vyhledávání'}
-                </p>
-              </div>
-              
-              <div className="space-y-2">
-                <label className="flex items-center gap-2">
-                  <div className="relative inline-flex h-5 w-9 items-center rounded-full bg-zinc-700 transition-colors has-[:checked]:bg-blue-600">
-                    <input
-                      type="checkbox"
-                      checked={autoFixSettings.useWeb}
-                      disabled={
-                        autoFixSettings.provider === "deepseek" &&
-                        (deepSeekWebSearchAvailable === null ||
-                          !deepSeekWebSearchAvailable)
-                      }
-                      onChange={(e) =>
-                        onAutoFixSettingsChange({
-                          ...autoFixSettings,
-                          useWeb: e.target.checked,
-                        })
-                      }
-                      className="sr-only"
-                    />
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoFixSettings.useWeb ? 'translate-x-5' : 'translate-x-1'}`} />
-                  </div>
-                  <div>
-                    <span className={`text-sm ${autoFixSettings.provider === "deepseek" &&
-                        (deepSeekWebSearchAvailable === null ||
-                          !deepSeekWebSearchAvailable)
-                        ? "text-zinc-600"
-                        : "text-zinc-400"}`}>
-                      Web vyhledávání
-                    </span>
-                    {autoFixSettings.provider === "deepseek" &&
-                      (deepSeekWebSearchAvailable === null ||
-                        !deepSeekWebSearchAvailable) && (
-                      <p className="text-xs text-amber-500">
-                        Vyžaduje PERPLEXITY_API_KEY nebo TAVILY_API_KEY
-                      </p>
-                    )}
-                  </div>
-                </label>
-                <p className="text-xs text-zinc-600">
-                  {autoFixSettings.useWeb
-                    ? 'AI bude ověřovat názvy na webu'
-                    : 'AI použije pouze interní znalosti'}
-                </p>
-              </div>
-            </div>
-            
+            <p className="rounded-lg border border-amber-500/20 bg-amber-950/20 px-3 py-2 text-xs text-amber-100/90">
+              <strong>Korekce názvů:</strong> DeepSeek (
+              <code className="text-amber-200/80">DEEPSEEK_API_KEY</code>
+              , model <code className="text-amber-200/80">DEEPSEEK_MODEL</code> / deepseek-chat) + nástroj{" "}
+              <strong>web_search</strong> (Perplexity / Tavily pokud máš klíče v .env, jinak DuckDuckGo).
+            </p>
+
             <div className="space-y-2">
               <label className="flex items-start gap-3">
                 <div className="relative mt-0.5 inline-flex h-5 w-9 items-center rounded-full bg-zinc-700 transition-colors has-[:checked]:bg-purple-600">
@@ -242,13 +171,6 @@ export default function UploadStep({
               </label>
             </div>
             
-            <div className="rounded border border-zinc-800 bg-zinc-900/50 p-3">
-              <p className="text-xs text-zinc-400">
-                <strong>Tip:</strong> {autoFixSettings.provider === 'gemini' 
-                  ? 'Gemini využívá Google Search pro nejpřesnější výsledky.' 
-                  : 'DeepSeek vyžaduje nastavení PERPLEXITY_API_KEY nebo TAVILY_API_KEY pro webové vyhledávání.'}
-              </p>
-            </div>
           </div>
         )}
       </div>

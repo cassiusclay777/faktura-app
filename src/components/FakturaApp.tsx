@@ -8,6 +8,9 @@ import {
   formatDateCz,
   formatMoneyCz,
   lineVatAmount,
+  patchLineKeepingBaseFromLiters,
+  patchLineKeepingBaseFromRate,
+  patchLineMoneyPrimary,
   totalsFromLines,
   tripLinesToEditable,
   type EditableInvoiceLine,
@@ -51,8 +54,6 @@ function loadHeader(): InvoiceHeader {
 function loadAutoFixSettings(): AutoFixSettings {
   const defaults: AutoFixSettings = {
     enabled: true,
-    provider: "gemini",
-    useWeb: true,
     idokladStyle: true,
     styleReference: "",
   };
@@ -60,8 +61,12 @@ function loadAutoFixSettings(): AutoFixSettings {
   try {
     const raw = localStorage.getItem(AUTOFIX_STORAGE_KEY);
     if (!raw) return defaults;
-    const o = JSON.parse(raw) as Partial<AutoFixSettings>;
-    return { ...defaults, ...o };
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    const next: AutoFixSettings = { ...defaults };
+    if (typeof o.enabled === "boolean") next.enabled = o.enabled;
+    if (typeof o.idokladStyle === "boolean") next.idokladStyle = o.idokladStyle;
+    if (typeof o.styleReference === "string") next.styleReference = o.styleReference;
+    return next;
   } catch {
     return defaults;
   }
@@ -71,21 +76,13 @@ export default function FakturaApp() {
   const [header, setHeader] = useState<InvoiceHeader>(() => emptyHeader());
   const [autoFixSettings, setAutoFixSettings] = useState<AutoFixSettings>(() => ({
     enabled: true,
-    provider: "gemini",
-    useWeb: true,
     idokladStyle: true,
     styleReference: "",
   }));
   const [lines, setLines] = useState<EditableInvoiceLine[]>([]);
   const [rawTranscript, setRawTranscript] = useState("");
   const [pasteText, setPasteText] = useState("");
-  const [provider, setProvider] = useState<"gemini" | "ollama" | "deepseek">(
-    "gemini",
-  );
-  const [fixNamesWeb, setFixNamesWeb] = useState(false);
-  const [fixNamesProvider, setFixNamesProvider] = useState<
-    "gemini" | "deepseek"
-  >("gemini");
+  const [provider, setProvider] = useState<"ollama" | "deepseek">("deepseek");
   const [userInstructions, setUserInstructions] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,9 +90,6 @@ export default function FakturaApp() {
   const [originalLines, setOriginalLines] = useState<EditableInvoiceLine[]>([]);
   const [correcting, setCorrecting] = useState(false);
   const [showCorrection, setShowCorrection] = useState(false);
-  /** Server má TAVILY_API_KEY — nutné pro DeepSeek + „Vyhledávat na webu“. */
-  const [deepSeekWebSearchAvailable, setDeepSeekWebSearchAvailable] =
-    useState<boolean | null>(null);
   const [idokladExportHint, setIdokladExportHint] = useState<string | null>(
     null,
   );
@@ -116,46 +110,6 @@ export default function FakturaApp() {
     setAutoFixSettings(loadAutoFixSettings());
     refreshHistory();
   }, [refreshHistory]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const r = await fetch("/api/config");
-        const data = (await r.json()) as {
-          deepSeekWebSearchConfigured?: boolean;
-          tavilyConfigured?: boolean;
-          perplexityConfigured?: boolean;
-        };
-        const ok =
-          data.deepSeekWebSearchConfigured ??
-          !!(data.tavilyConfigured || data.perplexityConfigured);
-        if (!cancelled) setDeepSeekWebSearchAvailable(!!ok);
-      } catch {
-        if (!cancelled) setDeepSeekWebSearchAvailable(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (fixNamesProvider === "deepseek" && deepSeekWebSearchAvailable === false) {
-      setFixNamesWeb(false);
-    }
-  }, [fixNamesProvider, deepSeekWebSearchAvailable]);
-
-  useEffect(() => {
-    // Pokud je DeepSeek vybrán jako provider v autoFixSettings a web search není dostupný,
-    // automaticky vypneme web search v autoFixSettings
-    if (autoFixSettings.provider === "deepseek" && deepSeekWebSearchAvailable === false) {
-      setAutoFixSettings(prev => ({
-        ...prev,
-        useWeb: false
-      }));
-    }
-  }, [autoFixSettings.provider, deepSeekWebSearchAvailable]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -338,13 +292,6 @@ export default function FakturaApp() {
         fd.append("provider", provider);
         fd.append("fixNames", String(shouldAutoFix));
         if (shouldAutoFix) {
-          fd.append("fixNamesProvider", autoFixSettings.provider);
-          const useWebSearch =
-            autoFixSettings.provider === "deepseek" &&
-            deepSeekWebSearchAvailable === false
-              ? false
-              : autoFixSettings.useWeb;
-          fd.append("fixNamesWeb", String(useWebSearch));
           fd.append("fixNamesIdokladStyle", String(autoFixSettings.idokladStyle));
           if (autoFixSettings.styleReference.trim()) {
             fd.append("styleReference", autoFixSettings.styleReference.trim());
@@ -397,15 +344,7 @@ export default function FakturaApp() {
         setLoading(false);
       }
     },
-    [
-      pasteText,
-      provider,
-      autoFixSettings,
-      deepSeekWebSearchAvailable,
-      header.supplierIco,
-      header.customerIco,
-      fetchAresByIco,
-    ],
+    [pasteText, provider, autoFixSettings, header.supplierIco, header.customerIco, fetchAresByIco],
   );
 
   const runCorrection = useCallback(async () => {
@@ -418,14 +357,6 @@ export default function FakturaApp() {
       fd.append("rawText", rawTranscript);
       fd.append("provider", provider);
       fd.append("fixNames", "true");
-      fd.append("fixNamesProvider", fixNamesProvider);
-      
-      // Pokud je DeepSeek a web search není dostupný, vypneme web search
-      const useWebSearch = fixNamesProvider === "deepseek" && deepSeekWebSearchAvailable === false
-        ? false
-        : fixNamesWeb;
-      
-      fd.append("fixNamesWeb", String(useWebSearch));
       fd.append("fixNamesIdokladStyle", String(autoFixSettings.idokladStyle));
       if (autoFixSettings.styleReference.trim()) {
         fd.append("styleReference", autoFixSettings.styleReference.trim());
@@ -451,15 +382,12 @@ export default function FakturaApp() {
       setCorrecting(false);
     }
   }, [
-    fixNamesWeb,
-    fixNamesProvider,
     userInstructions,
     lines,
     rawTranscript,
     provider,
     autoFixSettings.idokladStyle,
     autoFixSettings.styleReference,
-    deepSeekWebSearchAvailable,
   ]);
 
   const runFinalPreviewCorrection = useCallback(async () => {
@@ -472,12 +400,6 @@ export default function FakturaApp() {
       fd.append("rawText", rawTranscript);
       fd.append("provider", provider);
       fd.append("fixNames", "true");
-      fd.append("fixNamesProvider", fixNamesProvider);
-      const useWebSearch =
-        fixNamesProvider === "deepseek" && deepSeekWebSearchAvailable === false
-          ? false
-          : fixNamesWeb;
-      fd.append("fixNamesWeb", String(useWebSearch));
       fd.append("fixNamesIdokladStyle", "true");
       if (autoFixSettings.styleReference.trim()) {
         fd.append("styleReference", autoFixSettings.styleReference.trim());
@@ -502,16 +424,7 @@ export default function FakturaApp() {
     } finally {
       setCorrecting(false);
     }
-  }, [
-    lines,
-    rawTranscript,
-    provider,
-    fixNamesProvider,
-    deepSeekWebSearchAvailable,
-    fixNamesWeb,
-    autoFixSettings.styleReference,
-    userInstructions,
-  ]);
+  }, [lines, rawTranscript, provider, autoFixSettings.styleReference, userInstructions]);
 
   const updateLine = (id: string, patch: Partial<EditableInvoiceLine>) => {
     setLines((prev) =>
@@ -554,7 +467,6 @@ export default function FakturaApp() {
             autoFixSettings={autoFixSettings}
             onAutoFixSettingsChange={setAutoFixSettings}
             loading={loading}
-            deepSeekWebSearchAvailable={deepSeekWebSearchAvailable}
             onProcess={processPodklad}
           />
         )}
@@ -1013,7 +925,10 @@ export default function FakturaApp() {
                           value={line.liters}
                           onChange={(e) =>
                             updateLine(line.id, {
-                              liters: Number(e.target.value),
+                              ...patchLineKeepingBaseFromLiters(
+                                line,
+                                Number(e.target.value),
+                              ),
                             })
                           }
                           aria-label="Množství (l)"
@@ -1027,7 +942,10 @@ export default function FakturaApp() {
                           value={line.rate}
                           onChange={(e) =>
                             updateLine(line.id, {
-                              rate: Number(e.target.value),
+                              ...patchLineKeepingBaseFromRate(
+                                line,
+                                Number(e.target.value),
+                              ),
                             })
                           }
                           aria-label="Cena (Kč/l)"
@@ -1041,7 +959,10 @@ export default function FakturaApp() {
                           value={line.baseAmount}
                           onChange={(e) =>
                             updateLine(line.id, {
-                              baseAmount: Number(e.target.value),
+                              ...patchLineMoneyPrimary(
+                                line,
+                                Number(e.target.value),
+                              ),
                             })
                           }
                           aria-label="Základ (Kč)"
@@ -1102,56 +1023,11 @@ export default function FakturaApp() {
               <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-zinc-500">
                 Korekce názvů (AI)
               </h2>
-              <div className="mb-4 flex flex-wrap gap-4 text-sm">
-                <span className="text-zinc-500">Model:</span>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="fixNamesProvider"
-                    checked={fixNamesProvider === "gemini"}
-                    onChange={() => setFixNamesProvider("gemini")}
-                  />
-                  Gemini
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="fixNamesProvider"
-                    checked={fixNamesProvider === "deepseek"}
-                    onChange={() => setFixNamesProvider("deepseek")}
-                  />
-                  DeepSeek
-                </label>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2 mb-4">
-                <label
-                  className={`flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-2 ${
-                    fixNamesProvider === "deepseek" &&
-                    (deepSeekWebSearchAvailable === null ||
-                      !deepSeekWebSearchAvailable)
-                      ? "opacity-70"
-                      : ""
-                  }`}
-                  title="Gemini: Google Search. DeepSeek: web_search na serveru — PERPLEXITY_API_KEY nebo TAVILY_API_KEY v .env."
-                >
-                  <span className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={fixNamesWeb}
-                      disabled={
-                        fixNamesProvider === "deepseek" &&
-                        (deepSeekWebSearchAvailable === null ||
-                          !deepSeekWebSearchAvailable)
-                      }
-                      onChange={(e) => setFixNamesWeb(e.target.checked)}
-                    />
-                    Vyhledávat na webu
-                  </span>
-                  <span className="text-xs text-zinc-600">
-                    Gemini: Google Search · DeepSeek: Perplexity nebo Tavily
-                  </span>
-                </label>
-              </div>
+              <p className="mb-4 rounded-lg border border-amber-500/20 bg-amber-950/20 px-3 py-2 text-xs text-amber-100/90">
+                <strong>DeepSeek</strong> (
+                <code className="text-amber-200/80">DEEPSEEK_API_KEY</code>) + ověřování na webu přes nástroj{" "}
+                <code className="text-amber-200/80">web_search</code> (Tavily/Perplexity z .env nebo DuckDuckGo).
+              </p>
               <label className="mb-4 flex items-start gap-2">
                 <input
                   type="checkbox"

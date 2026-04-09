@@ -1,7 +1,13 @@
 "use client";
 
 import type { EditableInvoiceLine } from "@/lib/invoice";
-import { formatMoneyCz, totalsFromLines } from "@/lib/invoice";
+import {
+  formatMoneyCz,
+  patchLineKeepingBaseFromLiters,
+  patchLineKeepingBaseFromRate,
+  patchLineMoneyPrimary,
+  totalsFromLines,
+} from "@/lib/invoice";
 
 interface LinesTableProps {
   lines: EditableInvoiceLine[];
@@ -94,7 +100,10 @@ export default function LinesTable({
                     value={line.liters}
                     onChange={(e) =>
                       onUpdateLine(line.id, {
-                        liters: Number(e.target.value),
+                        ...patchLineKeepingBaseFromLiters(
+                          line,
+                          Number(e.target.value),
+                        ),
                       })
                     }
                     aria-label="Množství (l)"
@@ -108,7 +117,10 @@ export default function LinesTable({
                     value={line.rate}
                     onChange={(e) =>
                       onUpdateLine(line.id, {
-                        rate: Number(e.target.value),
+                        ...patchLineKeepingBaseFromRate(
+                          line,
+                          Number(e.target.value),
+                        ),
                       })
                     }
                     aria-label="Cena (Kč/l)"
@@ -122,7 +134,10 @@ export default function LinesTable({
                     value={line.baseAmount}
                     onChange={(e) =>
                       onUpdateLine(line.id, {
-                        baseAmount: Number(e.target.value),
+                        ...patchLineMoneyPrimary(
+                          line,
+                          Number(e.target.value),
+                        ),
                       })
                     }
                     aria-label="Základ (Kč)"

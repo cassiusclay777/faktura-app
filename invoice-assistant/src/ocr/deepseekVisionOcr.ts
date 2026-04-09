@@ -5,22 +5,29 @@ function env(name: string): string | undefined {
   return v && v.trim() ? v.trim() : undefined;
 }
 
+function resolveVisionBaseUrl(): string | undefined {
+  return (
+    env("DEEPSEEK_VISION_API_BASE") ??
+    env("DEEPSEEK_API_BASE") ??
+    "https://api.deepseek.com/v1"
+  );
+}
+
 /** Klíč pro OpenAI-kompatibilní vision endpoint (OpenRouter / OpenAI …). */
 export function resolveDeepSeekVisionOcrApiKey(): string | undefined {
   return (
     env("DEEPSEEK_VISION_API_KEY") ??
-    env("OPENROUTER_API_KEY") ??
+    env("DEEPSEEK_API_KEY") ??
     env("OPENAI_API_KEY") ??
-    env("DEEPSEEK_API_KEY")
+    env("OPENROUTER_API_KEY")
   );
 }
 
 /**
- * Je nastavený samostatný OpenAI-kompatibilní endpoint pro OCR při volbě „DeepSeek“ v UI?
- * Oficiální api.deepseek.com nepodporuje obrázky v chat API.
+ * Je k dispozici klíč pro OCR při volbě „DeepSeek“ v UI?
  */
 export function hasDeepSeekVisionOcrCredentials(): boolean {
-  return !!(env("DEEPSEEK_VISION_API_BASE") && resolveDeepSeekVisionOcrApiKey());
+  return !!resolveDeepSeekVisionOcrApiKey();
 }
 
 /**
@@ -30,18 +37,19 @@ export async function transcribeDeepSeekPathFromImage(
   mimeType: string,
   base64: string,
 ): Promise<string> {
-  const base = env("DEEPSEEK_VISION_API_BASE");
+  const base = resolveVisionBaseUrl();
   const apiKey = resolveDeepSeekVisionOcrApiKey();
-  const model = env("DEEPSEEK_VISION_MODEL") ?? "gpt-4o-mini";
+  const model =
+    env("DEEPSEEK_VISION_MODEL") ?? env("DEEPSEEK_MODEL") ?? "deepseek-chat";
 
   if (!base) {
     throw new Error(
-      "Pro přepis z fotky s volbou „DeepSeek“ nastav v .env DEEPSEEK_VISION_API_BASE na OpenAI-kompatibilní adresu (např. https://openrouter.ai/api/v1 nebo https://api.openai.com/v1). Samotné api.deepseek.com obrázky nepodporuje; korekce názvů pořád může používat DEEPSEEK_API_KEY.",
+      "Pro přepis z fotky s volbou „DeepSeek“ nastav v .env DEEPSEEK_VISION_API_BASE nebo DEEPSEEK_API_BASE.",
     );
   }
   if (!apiKey) {
     throw new Error(
-      "Chybí API klíč pro vision OCR. Nastav DEEPSEEK_VISION_API_KEY, OPENROUTER_API_KEY nebo OPENAI_API_KEY.",
+      "Chybí API klíč pro vision OCR. Nastav DEEPSEEK_VISION_API_KEY nebo DEEPSEEK_API_KEY (alternativně OPENAI_API_KEY / OPENROUTER_API_KEY).",
     );
   }
 

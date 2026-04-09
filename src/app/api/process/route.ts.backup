@@ -1,10 +1,11 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   parseTripText,
   transcribeHandwritingFromBuffer,
   correctTripLineDescriptionsDeepSeek,
   hasDeepSeekVisionOcrCredentials,
 } from "invoice-assistant";
+import type { VisionProvider } from "invoice-assistant";
 import { extractTextFromPdfBuffer } from "@/lib/extractPdfText";
 import { loadServerEnv } from "@/lib/loadEnv";
 import { searchWebForCorrection } from "@/lib/webSearch";
@@ -159,6 +160,59 @@ export async function POST(req: NextRequest) {
             400
           );
         }
+        text = await retryTransient(() =>
+          transcribeHandwritingFromBuffer({
+            buffer: buf,
+            mimeType: file.type,
+            provider,
+          }),
+        );
+      } else {
+        return apiError("Nepodporovaný typ souboru.", 400);
+      }
+    } else if (rawText && rawText.trim()) {
+      text = rawText;
+    } else {
+      return apiError("Vlož text podkladu nebo nahraj soubor.", 400);
+    }
+        if (extracted) {
+          text = extracted;
+        } else {
+          if (provider === "deepseek" && !hasDeepSeekVisionOcrCredentials()) {
+            return NextResponse.json(
+              {
+                error:
+                  "Skenované PDF: nastav DEEPSEEK_API_KEY (vision přes api.deepseek.com) nebo použij Ollama s vision modelem.",
+              },
+              { status: 400 },
+            );
+          }
+
+          let vBuf: Buffer = buf;
+          let vMime = "application/pdf";
+          if (provider === "ollama" || provider === "deepseek") {
+            const { renderPdfFirstPageToPngBuffer } =
+              await import("@/lib/pdfFirstPagePng");
+            vBuf = Buffer.from(await renderPdfFirstPageToPngBuffer(buf));
+            vMime = "image/png";
+          }
+
+          text =
+            provider === "deepseek"
+              ? await retryTransient(() =>
+                  transcribeHandwritingFromBuffer({
+                    buffer: vBuf,
+                    mimeType: vMime,
+                    provider,
+                  }),
+                )
+              : await transcribeHandwritingFromBuffer({
+                  buffer: vBuf,
+                  mimeType: vMime,
+                  provider,
+                });
+        }
+      } else if (isImageMime(file.type)) {
         text =
           provider === "deepseek"
             ? await retryTransient(() =>
@@ -174,12 +228,21 @@ export async function POST(req: NextRequest) {
                 provider,
               });
       } else {
-        return apiError("Nepodporovaný typ souboru.", 400);
+        return NextResponse.json(
+          {
+            error:
+              "Podporované jsou .txt, PDF, nebo obrázek (JPEG, PNG, WebP, GIF).",
+          },
+          { status: 400 },
+        );
       }
-    } else if (rawText && rawText.trim()) {
-      text = rawText;
+    } else if (typeof rawTextField === "string" && rawTextField.trim()) {
+      text = rawTextField;
     } else {
-      return apiError("Vlož text podkladu nebo nahraj soubor.", 400);
+      return NextResponse.json(
+        { error: "Vlož text podkladu nebo nahraj soubor." },
+        { status: 400 },
+      );
     }
 
     let parsed = parseTripText(text);
@@ -187,9 +250,12 @@ export async function POST(req: NextRequest) {
     if (fixNames) {
       const key = process.env.DEEPSEEK_API_KEY;
       if (!key?.trim()) {
-        return apiError(
-          "Pro korekci názvů nastav DEEPSEEK_API_KEY. Webové ověření: volitelně PERPLEXITY_API_KEY nebo TAVILY_API_KEY, jinak se použije DuckDuckGo.",
-          400,
+        return NextResponse.json(
+          {
+            error:
+              "Pro korekci názvů nastav DEEPSEEK_API_KEY. Webové ověření: volitelně PERPLEXITY_API_KEY nebo TAVILY_API_KEY, jinak se použije DuckDuckGo.",
+          },
+          { status: 400 },
         );
       }
       const corrected = await retryTransient(() =>
@@ -214,18 +280,18 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    return apiResponse({ rawTranscript: text, parsed });
+    return NextResponse.json({ rawTranscript: text, parsed });
   } catch (e) {
-    if (e instanceof ValidationError) {
-      return createValidationErrorResponse(e);
-    }
     const message = e instanceof Error ? e.message : String(e);
     if (isRetryableAiError(e)) {
-      return apiError(
-        "AI služba je dočasně přetížená nebo limitovaná (429/503). Zkus to za pár sekund.",
-        429,
+      return NextResponse.json(
+        {
+          error:
+            "AI služba je dočasně přetížená nebo limitovaná (429/503). Zkus to za pár sekund.",
+        },
+        { status: 429 },
       );
     }
-    return apiError(message, 500);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

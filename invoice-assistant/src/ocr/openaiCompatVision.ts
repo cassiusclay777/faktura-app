@@ -28,6 +28,15 @@ function buildHeaders(apiKey: string, baseUrl: string): Record<string, string> {
   return headers;
 }
 
+function resolveMaxTokens(): number {
+  const raw = process.env.DEEPSEEK_VISION_MAX_TOKENS?.trim();
+  const parsed = raw ? Number(raw) : NaN;
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 4096;
+  }
+  return Math.floor(parsed);
+}
+
 /**
  * Přepis z obrázku přes OpenAI-kompatibilní chat (image_url + text).
  * Použití: OpenRouter, OpenAI, Azure OpenAI (správný baseUrl), apod.
@@ -52,7 +61,7 @@ export async function transcribeWithOpenAICompatVision(
       model: opts.model,
       messages: [{ role: "user", content }],
       temperature: 0.2,
-      max_tokens: 8192,
+      max_tokens: resolveMaxTokens(),
     }),
   });
 

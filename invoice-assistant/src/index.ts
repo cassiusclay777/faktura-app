@@ -4,7 +4,7 @@ import { parseTripText } from "./parseTripText.js";
 import { transcribeHandwriting } from "./ocr/visionTranscribe.js";
 import type { VisionProvider } from "./ocr/visionTranscribe.js";
 import { isProbablyImagePath } from "./ocr/imageFile.js";
-import { correctTripLineDescriptions } from "./ocr/correctNamesGemini.js";
+import { correctTripLineDescriptionsDeepSeek } from "./ocr/correctNamesDeepSeek.js";
 import type { TripLine } from "./types.js";
 
 function parseArgs(argv: string[]): {
@@ -19,10 +19,6 @@ function parseArgs(argv: string[]): {
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--gemini") {
-      provider = "gemini";
-      continue;
-    }
     if (a === "--ollama") {
       provider = "ollama";
       continue;
@@ -42,8 +38,8 @@ function parseArgs(argv: string[]): {
     }
     if (a === "--provider" && argv[i + 1]) {
       const p = argv[++i];
-      if (p !== "gemini" && p !== "ollama" && p !== "deepseek") {
-        throw new Error('--provider musí být "gemini", "ollama" nebo "deepseek"');
+      if (p !== "ollama" && p !== "deepseek") {
+        throw new Error('--provider musí být "ollama" nebo "deepseek"');
       }
       provider = p;
       continue;
@@ -59,7 +55,7 @@ function parseArgs(argv: string[]): {
 
 function defaultProviderFromEnv(): VisionProvider | null {
   const p = process.env.VISION_PROVIDER?.toLowerCase();
-  if (p === "gemini" || p === "ollama" || p === "deepseek") return p;
+  if (p === "ollama" || p === "deepseek") return p;
   return null;
 }
 
@@ -78,25 +74,39 @@ function logDescriptionDiff(before: TripLine[], after: TripLine[]) {
   }
   if (!any) {
     console.error(
-      "\n--- Korekce názvů: žádná změna (model ponechal popisy) ---\n",
+      "\n--- Korekce názvů: žádné změny v popisech ---\n",
     );
   }
 }
 
+async function webSearchCli(query: string): Promise<string> {
+  const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+  const res = await fetch(url, {
+    headers: { "User-Agent": "invoice-assistant-cli/1.0" },
+  });
+  if (!res.ok) return `(HTTP ${res.status})`;
+  const data = (await res.json()) as {
+    AbstractText?: string;
+    RelatedTopics?: Array<{ Text?: string }>;
+  };
+  const parts: string[] = [];
+  if (data.AbstractText?.trim()) parts.push(data.AbstractText.trim());
+  if (Array.isArray(data.RelatedTopics)) {
+    for (const t of data.RelatedTopics.slice(0, 6)) {
+      if (t?.Text) parts.push(t.Text);
+    }
+  }
+  return parts.length > 0 ? parts.join("\n\n") : "(žádné výsledky)";
+}
+
 async function main() {
   const argv = process.argv.slice(2);
-  let filePath: string;
-  let provider: VisionProvider | null;
-  let fixNames: boolean;
-  let fixNamesWeb: boolean;
-
-  try {
-    ({ filePath, provider, fixNames, fixNamesWeb } = parseArgs(argv));
-  } catch (e) {
-    console.error((e as Error).message);
+  if (argv.includes("--help") || argv.includes("-h")) {
     printUsage();
-    process.exit(1);
+    process.exit(0);
   }
+
+  const { filePath, provider, fixNames, fixNamesWeb } = parseArgs(argv);
 
   const useImage =
     isProbablyImagePath(filePath) ||
@@ -106,11 +116,10 @@ async function main() {
   let raw: string;
 
   if (useImage && isProbablyImagePath(filePath)) {
-    const p =
-      provider ?? defaultProviderFromEnv() ?? inferProviderFromEnv();
+    const p = provider ?? defaultProviderFromEnv() ?? inferProviderFromEnv();
     if (!p) {
       console.error(
-        "Pro obrázek nastav provider: --gemini | --ollama | --deepseek nebo VISION_PROVIDER=gemini|ollama|deepseek",
+        "Pro obrázek nastav --ollama | --deepseek nebo VISION_PROVIDER=ollama|deepseek",
       );
       process.exit(1);
     }
@@ -125,20 +134,21 @@ async function main() {
   let result = parseTripText(raw);
 
   if (fixNames) {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey?.trim()) {
-      console.error(
-        "Pro --fix-names / --fix-names-web nastav GEMINI_API_KEY v .env.",
-      );
+      console.error("Pro --fix-names nastav DEEPSEEK_API_KEY v .env.");
       process.exit(1);
     }
     const before = result.lines.map((l) => ({ ...l }));
     try {
-      const corrected = await correctTripLineDescriptions(result.lines, {
-        apiKey,
-        model: process.env.GEMINI_MODEL,
-        useWebSearch: fixNamesWeb,
+      const corrected = await correctTripLineDescriptionsDeepSeek(result.lines, {
+        apiKey: apiKey.trim(),
+        model: process.env.DEEPSEEK_MODEL,
+        baseUrl: process.env.DEEPSEEK_API_BASE,
         rawTranscript: raw,
+        useWebSearch: fixNamesWeb,
+        webSearch: fixNamesWeb ? webSearchCli : undefined,
+        idokladStyle: true,
       });
       result = {
         lines: corrected,
@@ -151,9 +161,7 @@ async function main() {
     } catch (e) {
       console.error(
         (e as Error).message,
-        fixNamesWeb
-          ? "\n(Tip: zkus bez webu: --fix-names, nebo jiný GEMINI_MODEL.)"
-          : "",
+        fixNamesWeb ? "\n(Tip: zkus bez --fix-names-web.)" : "",
       );
       process.exit(1);
     }
@@ -166,7 +174,6 @@ async function main() {
 }
 
 function inferProviderFromEnv(): VisionProvider | null {
-  if (process.env.GEMINI_API_KEY) return "gemini";
   if (process.env.DEEPSEEK_API_KEY) return "deepseek";
   if (process.env.OLLAMA_VISION_MODEL) return "ollama";
   return null;
@@ -178,25 +185,21 @@ Použití:
   Textový podklad:
     npx tsx src/index.ts podklad.txt
 
-  Foto ručního zápisu (Gemini):
-    set GEMINI_API_KEY=...   (PowerShell: $env:GEMINI_API_KEY="...")
-    npx tsx src/index.ts --gemini sken.jpg
+  Foto (DeepSeek, cloud):
+    set DEEPSEEK_API_KEY=...
+    npx tsx src/index.ts --deepseek sken.jpg
 
   Foto (Ollama, lokálně):
     ollama pull llava
     set OLLAMA_VISION_MODEL=llava
     npx tsx src/index.ts --ollama sken.jpg
 
-  Foto (DeepSeek, cloud – stejný klíč jako korekce):
-    set DEEPSEEK_API_KEY=...
-    npx tsx src/index.ts --deepseek sken.jpg
+Volitelně: VISION_PROVIDER=ollama|deepseek v .env
 
-Volitelně: VISION_PROVIDER=gemini|ollama|deepseek v .env
-
-  Korekce názvů firem (Gemini, po parsování):
+  Korekce názvů (DeepSeek, po parsování):
     npx tsx src/index.ts --fix-names podklad.txt
-    npx tsx src/index.ts --gemini sken.jpg --fix-names-web
-  (--fix-names-web zapne Google Search u modelu; vyžaduje GEMINI_API_KEY)
+    npx tsx src/index.ts podklad.txt --fix-names-web
+  (--fix-names-web = nástroj web_search přes DuckDuckGo v CLI)
 `);
 }
 

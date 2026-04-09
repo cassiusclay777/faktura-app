@@ -3,6 +3,7 @@
 import { useMemo, useCallback, useState } from "react";
 import type { EditableInvoiceLine, InvoiceHeader } from "@/lib/invoice";
 import { formatDateCz, formatMoneyCz, totalsFromLines, lineVatAmount } from "@/lib/invoice";
+import { formatUnknownError } from "@/lib/formatUnknownError";
 import { IDOKLAD_ISSUED_INVOICE_CREATE_URL } from "@/lib/idokladExport";
 
 // PDF export pomocí pdfmake (client-side)
@@ -307,7 +308,7 @@ export default function PreviewStep({
       const filename = buildInvoiceFileName(header);
       downloadPdfBlob(blob, filename);
     } catch (e) {
-      setPdfError(`Chyba při generování PDF: ${(e as Error).message}`);
+      setPdfError(`Chyba při generování PDF: ${formatUnknownError(e)}`);
     } finally {
       setPdfLoading(false);
     }

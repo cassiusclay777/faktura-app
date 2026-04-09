@@ -4,10 +4,11 @@ import type { EditableInvoiceLine, InvoiceHeader } from "@/lib/invoice";
 import type { SavedInvoice } from "@/lib/invoiceHistory";
 import type { AutoFixSettings } from "./UploadStep";
 import HistoryPanel from "./HistoryPanel";
-import HeaderForms from "./HeaderForms";
+import { InvoiceHeaderForm } from "@/components/forms/InvoiceHeaderForm";
 import LinesTable from "./LinesTable";
 import CorrectionPanel from "./CorrectionPanel";
 import RawTranscriptPanel from "./RawTranscriptPanel";
+import type { InvoiceHeaderInput } from "@/lib/validation";
 
 interface InvoiceStepProps {
   // History
@@ -34,15 +35,10 @@ interface InvoiceStepProps {
   
   // Correction
   rawTranscript: string;
-  fixNamesProvider: "gemini" | "deepseek";
-  onFixNamesProviderChange: (provider: "gemini" | "deepseek") => void;
-  fixNamesWeb: boolean;
-  onFixNamesWebChange: (web: boolean) => void;
   userInstructions: string;
   onUserInstructionsChange: (instructions: string) => void;
   autoFixSettings: AutoFixSettings;
   onAutoFixSettingsChange: (settings: AutoFixSettings) => void;
-  deepSeekWebSearchAvailable: boolean | null;
   correcting: boolean;
   showCorrection: boolean;
   onShowCorrectionChange: (show: boolean) => void;
@@ -74,15 +70,10 @@ export default function InvoiceStep({
   
   // Correction
   rawTranscript,
-  fixNamesProvider,
-  onFixNamesProviderChange,
-  fixNamesWeb,
-  onFixNamesWebChange,
   userInstructions,
   onUserInstructionsChange,
   autoFixSettings,
   onAutoFixSettingsChange,
-  deepSeekWebSearchAvailable,
   correcting,
   showCorrection,
   onShowCorrectionChange,
@@ -100,11 +91,23 @@ export default function InvoiceStep({
         onClearHistory={onClearHistory}
       />
       
-      <HeaderForms
-        header={header}
-        onHeaderChange={onHeaderChange}
+      <InvoiceHeaderForm
+        initialData={header}
+        onSubmit={(data: InvoiceHeaderInput) => {
+          // Convert InvoiceHeaderInput to InvoiceHeader
+          const updatedHeader: InvoiceHeader = {
+            ...header,
+            ...data,
+            // Ensure numeric fields are properly typed
+            supplierIco: data.supplierIco,
+            customerIco: data.customerIco,
+            customerReliableVatPayer: data.customerReliableVatPayer || false,
+          };
+          onHeaderChange(updatedHeader);
+        }}
+        onAresLookup={onFillFromAres}
         aresLoading={aresLoading}
-        onFillFromAres={onFillFromAres}
+        showAresButton={true}
       />
       
       <LinesTable
@@ -119,15 +122,10 @@ export default function InvoiceStep({
       <CorrectionPanel
         lines={lines}
         originalLines={originalLines}
-        fixNamesProvider={fixNamesProvider}
-        onFixNamesProviderChange={onFixNamesProviderChange}
-        fixNamesWeb={fixNamesWeb}
-        onFixNamesWebChange={onFixNamesWebChange}
         userInstructions={userInstructions}
         onUserInstructionsChange={onUserInstructionsChange}
         autoFixSettings={autoFixSettings}
         onAutoFixSettingsChange={onAutoFixSettingsChange}
-        deepSeekWebSearchAvailable={deepSeekWebSearchAvailable}
         correcting={correcting}
         showCorrection={showCorrection}
         onShowCorrectionChange={onShowCorrectionChange}

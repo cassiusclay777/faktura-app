@@ -2,27 +2,15 @@
 
 import { formatDateCz } from "@/lib/invoice";
 import type { EditableInvoiceLine } from "@/lib/invoice";
-
-interface AutoFixSettings {
-  enabled: boolean;
-  provider: "gemini" | "deepseek";
-  useWeb: boolean;
-  idokladStyle: boolean;
-  styleReference: string;
-}
+import type { AutoFixSettings } from "@/components/wizard/UploadStep";
 
 interface CorrectionPanelProps {
   lines: EditableInvoiceLine[];
   originalLines: EditableInvoiceLine[];
-  fixNamesProvider: "gemini" | "deepseek";
-  onFixNamesProviderChange: (provider: "gemini" | "deepseek") => void;
-  fixNamesWeb: boolean;
-  onFixNamesWebChange: (web: boolean) => void;
   userInstructions: string;
   onUserInstructionsChange: (instructions: string) => void;
   autoFixSettings: AutoFixSettings;
   onAutoFixSettingsChange: (settings: AutoFixSettings) => void;
-  deepSeekWebSearchAvailable: boolean | null;
   correcting: boolean;
   showCorrection: boolean;
   onShowCorrectionChange: (show: boolean) => void;
@@ -32,15 +20,10 @@ interface CorrectionPanelProps {
 export default function CorrectionPanel({
   lines,
   originalLines,
-  fixNamesProvider,
-  onFixNamesProviderChange,
-  fixNamesWeb,
-  onFixNamesWebChange,
   userInstructions,
   onUserInstructionsChange,
   autoFixSettings,
   onAutoFixSettingsChange,
-  deepSeekWebSearchAvailable,
   correcting,
   showCorrection,
   onShowCorrectionChange,
@@ -51,111 +34,11 @@ export default function CorrectionPanel({
       <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-zinc-500">
         Korekce názvů (AI)
       </h2>
-      <div className="mb-6 space-y-4">
-        <div>
-          <div className="mb-2 flex items-center gap-2">
-            <h3 className="text-sm font-medium text-zinc-400">Základní nastavení</h3>
-            <div className="group relative">
-              <svg className="h-4 w-4 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div className="absolute bottom-full left-1/2 mb-2 hidden -translate-x-1/2 rounded-lg bg-zinc-800 p-3 text-xs text-zinc-300 shadow-xl group-hover:block w-64">
-                <p>Vyber AI model pro korekci názvů. Gemini používá Google Search, DeepSeek používá Perplexity/Tavily pro webové vyhledávání.</p>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-zinc-500">Model:</span>
-              <div className="flex gap-2">
-                <label className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 hover:bg-zinc-800/50 has-[:checked]:border-amber-500 has-[:checked]:bg-amber-500/10">
-                  <input
-                    type="radio"
-                    name="fixNamesProvider"
-                    className="sr-only"
-                    checked={fixNamesProvider === "gemini"}
-                    onChange={() => onFixNamesProviderChange("gemini")}
-                  />
-                  <span className={`h-2.5 w-2.5 rounded-full border ${fixNamesProvider === "gemini" ? "border-amber-500 bg-amber-500" : "border-zinc-600"}`} />
-                  <span className={fixNamesProvider === "gemini" ? "text-amber-400" : "text-zinc-400"}>
-                    Gemini
-                  </span>
-                </label>
-                <label className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 hover:bg-zinc-800/50 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-500/10">
-                  <input
-                    type="radio"
-                    name="fixNamesProvider"
-                    className="sr-only"
-                    checked={fixNamesProvider === "deepseek"}
-                    onChange={() => onFixNamesProviderChange("deepseek")}
-                  />
-                  <span className={`h-2.5 w-2.5 rounded-full border ${fixNamesProvider === "deepseek" ? "border-blue-500 bg-blue-500" : "border-zinc-600"}`} />
-                  <span className={fixNamesProvider === "deepseek" ? "text-blue-400" : "text-zinc-400"}>
-                    DeepSeek
-                  </span>
-                </label>
-              </div>
-            </div>
-          </div>
-          <p className="mt-2 text-xs text-zinc-600">
-            {fixNamesProvider === "gemini" 
-              ? "Gemini využívá Google Search pro ověření názvů." 
-              : "DeepSeek používá Perplexity nebo Tavily pro webové vyhledávání."}
-          </p>
-        </div>
-        
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-2">
-                <div className="relative inline-flex h-5 w-9 items-center rounded-full bg-zinc-700 transition-colors has-[:checked]:bg-emerald-600">
-                  <input
-                    type="checkbox"
-                    checked={fixNamesWeb}
-                    disabled={
-                      fixNamesProvider === "deepseek" &&
-                      (deepSeekWebSearchAvailable === null ||
-                        !deepSeekWebSearchAvailable)
-                    }
-                    onChange={(e) => onFixNamesWebChange(e.target.checked)}
-                    className="sr-only"
-                  />
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${fixNamesWeb ? 'translate-x-5' : 'translate-x-1'}`} />
-                </div>
-                <div>
-                  <span className={`text-sm ${fixNamesProvider === "deepseek" &&
-                      (deepSeekWebSearchAvailable === null ||
-                        !deepSeekWebSearchAvailable)
-                      ? "text-zinc-600"
-                      : "text-zinc-400"}`}>
-                    Vyhledávat na webu
-                  </span>
-                  {fixNamesProvider === "deepseek" &&
-                    (deepSeekWebSearchAvailable === null ||
-                      !deepSeekWebSearchAvailable) && (
-                    <p className="text-xs text-amber-500">
-                      Vyžaduje PERPLEXITY_API_KEY nebo TAVILY_API_KEY
-                    </p>
-                  )}
-                </div>
-              </label>
-              <div className="group relative">
-                <svg className="h-4 w-4 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div className="absolute bottom-full left-1/2 mb-2 hidden -translate-x-1/2 rounded-lg bg-zinc-800 p-3 text-xs text-zinc-300 shadow-xl group-hover:block w-64">
-                  <p>Povolit webové vyhledávání pro ověření názvů firem a míst. Gemini používá Google Search, DeepSeek používá Perplexity nebo Tavily.</p>
-                </div>
-              </div>
-            </div>
-            <p className="text-xs text-zinc-600">
-              {fixNamesWeb
-                ? 'AI bude ověřovat názvy na webu pro vyšší přesnost'
-                : 'AI použije pouze interní znalosti bez připojení k webu'}
-            </p>
-          </div>
-        </div>
-      </div>
+      <p className="mb-6 rounded-lg border border-amber-500/20 bg-amber-950/20 px-3 py-2 text-xs text-amber-100/90">
+        <strong>DeepSeek</strong> (
+        <code className="text-amber-200/80">DEEPSEEK_API_KEY</code>) + nástroj{" "}
+        <strong>web_search</strong> (volitelně PERPLEXITY_API_KEY / TAVILY_API_KEY, jinak DuckDuckGo).
+      </p>
       <label className="mb-4 flex items-start gap-2">
         <input
           type="checkbox"
@@ -191,8 +74,10 @@ export default function CorrectionPanel({
           placeholder="Nech prázdné pro vestavěný vzor, nebo vlož 2–5 řádků popisu z vlastní faktury z iDokladu…"
         />
       </label>
-      <label className="block space-y-1 mb-4">
-        <span className="text-xs text-zinc-500">Vlastní instrukce pro opravu (názvy firem, které znáš, opravy překlepů)</span>
+      <label className="mb-4 block space-y-1">
+        <span className="text-xs text-zinc-500">
+          Vlastní instrukce pro opravu (názvy firem, které znáš, opravy překlepů)
+        </span>
         <textarea
           value={userInstructions}
           onChange={(e) => onUserInstructionsChange(e.target.value)}

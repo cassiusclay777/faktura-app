@@ -62,10 +62,12 @@ function fallbackHeaderFromText(text: string): Partial<InvoiceHeader> {
   return extractInvoiceHeaderHintsFromText(text);
 }
 
-async function extractHeaderWithGemini(text: string): Promise<Partial<InvoiceHeader>> {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-  if (!apiKey) throw new Error("Chybí GEMINI_API_KEY.");
-  const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+async function extractHeaderWithDeepSeek(text: string): Promise<Partial<InvoiceHeader>> {
+  const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
+  if (!apiKey) throw new Error("Chybí DEEPSEEK_API_KEY.");
+  const base = (process.env.DEEPSEEK_API_BASE ?? "https://api.deepseek.com")
+    .replace(/\/$/, "");
+  const model = process.env.DEEPSEEK_MODEL?.trim() || "deepseek-chat";
   const prompt = [
     "Z textu faktury vytáhni pouze hlavičku do JSON objektu.",
     "Vrať pouze JSON (bez markdownu) s klíči:",
@@ -76,23 +78,26 @@ async function extractHeaderWithGemini(text: string): Promise<Partial<InvoiceHea
     text.slice(0, 16000),
   ].join("\n");
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url, {
+  const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1 },
+      model,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.1,
     }),
   });
   const data = (await res.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    choices?: Array<{ message?: { content?: string } }>;
     error?: { message?: string };
   };
   if (!res.ok) {
-    throw new Error(data.error?.message ?? `Gemini HTTP ${res.status}`);
+    throw new Error(data.error?.message ?? `DeepSeek HTTP ${res.status}`);
   }
-  const out = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const out = data.choices?.[0]?.message?.content ?? "";
   return normalizeHeaderInput(extractJsonObject(out));
 }
 
@@ -100,10 +105,10 @@ export async function POST(req: NextRequest) {
   loadServerEnv();
   try {
     const formData = await req.formData();
-    const raw = (formData.get("provider") as string) || "gemini";
-    if (raw !== "gemini" && raw !== "ollama" && raw !== "deepseek") {
+    const raw = (formData.get("provider") as string) || "deepseek";
+    if (raw !== "ollama" && raw !== "deepseek") {
       return NextResponse.json(
-        { error: 'Parametr provider musí být "gemini", "ollama" nebo "deepseek".' },
+        { error: 'Parametr provider musí být "ollama" nebo "deepseek".' },
         { status: 400 },
       );
     }
@@ -123,7 +128,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json(
             {
               error:
-                "Skenované PDF s DeepSeek: nastav DEEPSEEK_VISION_API_BASE + klíč (viz nápověda u přepisu z fotky), nebo zvol Gemini.",
+                "Skenované PDF s DeepSeek: nastav DEEPSEEK_API_KEY pro vision OCR (api.deepseek.com).",
             },
             { status: 400 },
           );
@@ -155,7 +160,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const header = await extractHeaderWithGemini(text).catch(() => fallbackHeaderFromText(text));
+    const header = await extractHeaderWithDeepSeek(text).catch(() =>
+      fallbackHeaderFromText(text),
+    );
     return NextResponse.json({ header, rawTranscript: text });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
