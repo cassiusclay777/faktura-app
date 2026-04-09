@@ -7,6 +7,7 @@ import type { VisionProvider } from "invoice-assistant";
 import { extractTextFromPdfBuffer } from "@/lib/extractPdfText";
 import { loadServerEnv } from "@/lib/loadEnv";
 import type { InvoiceHeader } from "@/lib/invoice";
+import { extractInvoiceHeaderHintsFromText } from "@/lib/extractInvoiceHeaderHints";
 
 loadServerEnv();
 
@@ -58,15 +59,7 @@ function normalizeHeaderInput(input: unknown): Partial<InvoiceHeader> {
 }
 
 function fallbackHeaderFromText(text: string): Partial<InvoiceHeader> {
-  const icoMatches = [...text.matchAll(/\bIČ(?:O)?\s*[:.]?\s*(\d{8})\b/gi)].map((m) => m[1]);
-  const dicMatches = [...text.matchAll(/\bDIČ\s*[:.]?\s*([A-Z]{2}\s*\d{8,12})\b/gi)].map((m) =>
-    m[1].replace(/\s+/g, ""),
-  );
-  return {
-    supplierIco: icoMatches[0],
-    customerIco: icoMatches[1],
-    customerDic: dicMatches[1] ?? dicMatches[0],
-  };
+  return extractInvoiceHeaderHintsFromText(text);
 }
 
 async function extractHeaderWithGemini(text: string): Promise<Partial<InvoiceHeader>> {

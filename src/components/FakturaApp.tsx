@@ -26,6 +26,7 @@ import {
   type SavedInvoice,
 } from "@/lib/invoiceHistory";
 import { readJsonResponse } from "@/lib/readJsonResponse";
+import { extractInvoiceHeaderHintsFromText } from "@/lib/extractInvoiceHeaderHints";
 import AppHeader from "@/components/ui/AppHeader";
 import UploadStep from "@/components/wizard/UploadStep";
 import type { AutoFixSettings } from "@/components/wizard/UploadStep";
@@ -218,16 +219,19 @@ export default function FakturaApp() {
     }
   }, [refreshHistory]);
 
-  const fillFromAres = useCallback(
-    async (side: "supplier" | "customer") => {
-      const rawIco = side === "supplier" ? header.supplierIco : header.customerIco;
+  const fetchAresByIco = useCallback(
+    async (
+      side: "supplier" | "customer",
+      rawIco: string,
+      options?: { silent?: boolean },
+    ): Promise<boolean> => {
       const clean = rawIco.replace(/\s/g, "");
       if (!/^\d{8}$/.test(clean)) {
-        setError("Zadej platné 8místné IČO.");
-        return;
+        if (!options?.silent) setError("Zadej platné 8místné IČO.");
+        return false;
       }
       setAresLoading(side);
-      setError(null);
+      if (!options?.silent) setError(null);
       try {
         const res = await fetch(`/api/ares?ico=${encodeURIComponent(clean)}`);
         const data = await readJsonResponse<{
@@ -259,13 +263,24 @@ export default function FakturaApp() {
                 customerDic: data.dic || h.customerDic,
               },
         );
+        return true;
       } catch (e) {
-        setError(formatUnknownError(e));
+        if (!options?.silent) setError(formatUnknownError(e));
+        else console.warn(`ARES auto (${side}):`, formatUnknownError(e));
+        return false;
       } finally {
         setAresLoading(null);
       }
     },
-    [header.supplierIco, header.customerIco],
+    [],
+  );
+
+  const fillFromAres = useCallback(
+    async (side: "supplier" | "customer") => {
+      const rawIco = side === "supplier" ? header.supplierIco : header.customerIco;
+      await fetchAresByIco(side, rawIco);
+    },
+    [header.supplierIco, header.customerIco, fetchAresByIco],
   );
 
   const copyIdokladExport = useCallback(async () => {
@@ -316,11 +331,25 @@ export default function FakturaApp() {
       setError(null);
       setLoading(true);
       try {
+        const shouldAutoFix = !!(autoFixSettings.enabled && file && file.size > 0);
         const fd = new FormData();
         if (file && file.size > 0) fd.append("file", file);
         else fd.append("rawText", pasteText);
         fd.append("provider", provider);
-        fd.append("fixNames", "false");
+        fd.append("fixNames", String(shouldAutoFix));
+        if (shouldAutoFix) {
+          fd.append("fixNamesProvider", autoFixSettings.provider);
+          const useWebSearch =
+            autoFixSettings.provider === "deepseek" &&
+            deepSeekWebSearchAvailable === false
+              ? false
+              : autoFixSettings.useWeb;
+          fd.append("fixNamesWeb", String(useWebSearch));
+          fd.append("fixNamesIdokladStyle", String(autoFixSettings.idokladStyle));
+          if (autoFixSettings.styleReference.trim()) {
+            fd.append("styleReference", autoFixSettings.styleReference.trim());
+          }
+        }
 
         const res = await fetch("/api/process", { method: "POST", body: fd });
         const data = await readJsonResponse<{
@@ -339,59 +368,26 @@ export default function FakturaApp() {
         setRawTranscript(rawText);
         setLines(parsedLines);
         setOriginalLines(parsedLines);
+        setShowCorrection(false);
 
-        // Automatická korekce po uploadu obrázku/PDF
-        if (autoFixSettings.enabled && file && file.size > 0) {
-          setCorrecting(true);
-          try {
-            const fd2 = new FormData();
-            fd2.append("rawText", rawText);
-            fd2.append("provider", provider);
-            fd2.append("fixNames", "true");
-            fd2.append("fixNamesProvider", autoFixSettings.provider);
-            
-            // Pokud je DeepSeek a web search není dostupný, vypneme web search
-            const useWebSearch = autoFixSettings.provider === "deepseek" && deepSeekWebSearchAvailable === false
-              ? false
-              : autoFixSettings.useWeb;
-            
-            fd2.append("fixNamesWeb", String(useWebSearch));
-            fd2.append("fixNamesIdokladStyle", String(autoFixSettings.idokladStyle));
-            if (autoFixSettings.styleReference.trim()) {
-              fd2.append("styleReference", autoFixSettings.styleReference.trim());
-            }
+        const hints = extractInvoiceHeaderHintsFromText(rawText);
+        setHeader((h) => ({ ...h, ...hints }));
 
-            const res2 = await fetch("/api/process", { method: "POST", body: fd2 });
-            const data2 = await readJsonResponse<{
-              error?: string;
-              parsed?: ParsedPodklad;
-            }>(res2);
-            if (!res2.ok) {
-              if (res2.status === 503) {
-                console.warn(
-                  "Auto-fix názvů přeskočen: Gemini je dočasně přetížené (503).",
-                );
-              } else {
-                throw new Error(
-                  data2.error ?? (res2.statusText || `HTTP ${res2.status}`),
-                );
-              }
-            }
-            if (res2.ok && data2.parsed) {
-              const correctedLines = tripLinesToEditable(data2.parsed.lines);
-              setLines(correctedLines);
-              setShowCorrection(true);
-            }
-           } catch (e) {
-             // Korekce selhala – necháme původní parsing
-             console.error("Auto-fix selhal:", e);
-             // Zobrazíme uživatelsky přívětivou chybu pro chybějící web search konfiguraci
-             if (e instanceof Error && e.message.includes("PERPLEXITY_API_KEY") && e.message.includes("TAVILY_API_KEY")) {
-               console.warn("Web search není nakonfigurován. Pro DeepSeek web search nastav PERPLEXITY_API_KEY nebo TAVILY_API_KEY v .env.");
-             }
-           } finally {
-             setCorrecting(false);
-           }
+        const mergedSupplierIco = (
+          hints.supplierIco ?? header.supplierIco
+        ).replace(/\s/g, "");
+        const mergedCustomerIco = (
+          hints.customerIco ?? header.customerIco
+        ).replace(/\s/g, "");
+
+        if (/^\d{8}$/.test(mergedSupplierIco)) {
+          await fetchAresByIco("supplier", mergedSupplierIco, { silent: true });
+        }
+        if (
+          /^\d{8}$/.test(mergedCustomerIco) &&
+          mergedCustomerIco !== mergedSupplierIco
+        ) {
+          await fetchAresByIco("customer", mergedCustomerIco, { silent: true });
         }
 
         setTab("faktura");
@@ -401,7 +397,15 @@ export default function FakturaApp() {
         setLoading(false);
       }
     },
-    [pasteText, provider, autoFixSettings, deepSeekWebSearchAvailable],
+    [
+      pasteText,
+      provider,
+      autoFixSettings,
+      deepSeekWebSearchAvailable,
+      header.supplierIco,
+      header.customerIco,
+      fetchAresByIco,
+    ],
   );
 
   const runCorrection = useCallback(async () => {
