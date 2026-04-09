@@ -18,7 +18,7 @@ Server načítá v tomto pořadí (pozdější přepíše dřívější):
 2. `.env`
 3. `.env.local`
 
-Stačí mít `GEMINI_API_KEY` (a případně Ollama), pro korekci přes DeepSeek navíc **`DEEPSEEK_API_KEY`**, v **`.env`** nebo **`.env.local`** – případně v `invoice-assistant/.env`.
+Pro **přepis z fotky/PDF** a **korekci názvů** nastav **`DEEPSEEK_API_KEY`** (výchozí ve UI), případně jen **Ollama** (`OLLAMA_VISION_MODEL` + `OLLAMA_BASE_URL`) – v **`.env`** nebo **`.env.local`**, případně v `invoice-assistant/.env`.
 
 Implementace: [`src/lib/loadEnv.ts`](src/lib/loadEnv.ts) – volá se při načtení a na začátku požadavku v [`/api/process`](src/app/api/process/route.ts) (Node runtime).
 
@@ -26,7 +26,7 @@ Implementace: [`src/lib/loadEnv.ts`](src/lib/loadEnv.ts) – volá se při načt
 
 ```bash
 npm install
-copy .env.example .env   # nebo .env.local; doplň GEMINI / DEEPSEEK podle potřeby
+copy .env.example .env   # Windows; na Unixu: cp .env.example .env  — pak doplň DEEPSEEK (nebo Ollama) podle potřeby
 npm run dev
 ```
 
@@ -35,9 +35,9 @@ Otevři [http://localhost:3000](http://localhost:3000).
 ## Konfigurace
 
 - **Textový podklad (.txt nebo vložený text)** – API klíče nepotřebuješ.
-- **PDF** – nejdřív se čte textová vrstva (bez klíče). Je-li to sken bez textu, použije se **Gemini** (`GEMINI_API_KEY`) a celé PDF se pošle do modelu jako dokument. Ollama sken PDF neumí – nahraj PNG/JPEG nebo přepni na Gemini.
-- **Foto podkladu** – `GEMINI_API_KEY` v `.env` nebo `.env.local` (Gemini), nebo lokální Ollama + `OLLAMA_VISION_MODEL`.
-- **Korekce názvů** – v záložce Faktura zvol **Gemini** (`GEMINI_API_KEY`, volitelně vyhledávání přes Google Search) nebo **DeepSeek** (`DEEPSEEK_API_KEY`, model default `deepseek-chat`). U DeepSeek je „Vyhledávat na webu“ se serverovým nástrojem `web_search` dostupné s **`PERPLEXITY_API_KEY`** (Sonar) a/nebo **`TAVILY_API_KEY`**; volitelně `DEEPSEEK_WEB_SEARCH_PROVIDER=perplexity|tavily` (viz `.env.example`). Vlastní instrukce v poli pod tím platí pro oba.
+- **PDF** – nejdřív se čte textová vrstva (bez klíče). Je-li to sken bez textu, použije se **DeepSeek vision** (`DEEPSEEK_API_KEY`) nebo **Ollama** (první stránka jako obrázek); bez klíče DeepSeek u skenu přejdi na PNG/JPEG nebo doplň `.env` podle `.env.example`.
+- **Foto podkladu** – **`DEEPSEEK_API_KEY`** (cloud) nebo lokální **Ollama** + `OLLAMA_VISION_MODEL`.
+- **Korekce názvů** – **`DEEPSEEK_API_KEY`**, model default `deepseek-chat`. „Vyhledávat na webu“ používá nástroj `web_search`; volitelně **`PERPLEXITY_API_KEY`** (Sonar) a/nebo **`TAVILY_API_KEY`**; případně `DEEPSEEK_WEB_SEARCH_PROVIDER=perplexity|tavily` (viz `.env.example`).
 
 Údaje o dodavateli v formuláři se ukládají do `localStorage` v prohlížeči.
 

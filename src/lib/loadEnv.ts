@@ -11,16 +11,17 @@ function projectRoot(): string {
 }
 
 /**
- * Doplní `process.env` ze souborů v kořeni `faktura-app` (vedle toho, co už načte Next.js).
- * **DeepSeek** (`DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_API_BASE`). Pro lepší web u korekce volitelně **PERPLEXITY_API_KEY** / **TAVILY_API_KEY** (jinak DuckDuckGo).
+ * Doplní `process.env` (stejné pořadí jako v README).
+ * **DeepSeek** (`DEEPSEEK_API_KEY`, …). Pro web u korekce volitelně **PERPLEXITY_API_KEY** / **TAVILY_API_KEY** (jinak DuckDuckGo).
  *
- * Pořadí: `.env` → `.env.local` (každý další přepíše).
+ * Pořadí: `invoice-assistant/.env` → `.env` → `.env.local` (pozdější přepíše dřívější).
  */
 export function loadServerEnv(): void {
   if (loaded) return;
   loaded = true;
   const root = projectRoot();
   const paths = [
+    path.join(root, "invoice-assistant", ".env"),
     path.join(root, ".env"),
     path.join(root, ".env.local"),
   ];
