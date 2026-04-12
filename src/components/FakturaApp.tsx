@@ -35,7 +35,9 @@ export default function FakturaApp() {
   const [lines, setLines] = useState<EditableInvoiceLine[]>([]);
   const [rawTranscript, setRawTranscript] = useState("");
   const [pasteText, setPasteText] = useState("");
-  const [provider, setProvider] = useState<"gemini" | "ollama">("gemini");
+  const [provider, setProvider] = useState<"openrouter" | "ollama">(
+    "openrouter",
+  );
   const [fixNamesWeb, setFixNamesWeb] = useState(false);
   const [fixNamesProvider, setFixNamesProvider] = useState<
     "gemini" | "openrouter"
@@ -237,11 +239,13 @@ export default function FakturaApp() {
                 <select
                   value={provider}
                   onChange={(e) =>
-                    setProvider(e.target.value as "gemini" | "ollama")
+                    setProvider(e.target.value as "openrouter" | "ollama")
                   }
                   className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
                 >
-                  <option value="gemini">Gemini (cloud, GEMINI_API_KEY)</option>
+                  <option value="openrouter">
+                    OpenRouter (cloud, OPENROUTER_API_KEY)
+                  </option>
                   <option value="ollama">Ollama (lokálně)</option>
                 </select>
               </label>

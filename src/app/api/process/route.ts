@@ -14,6 +14,15 @@ loadServerEnv();
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
+function normalizeVisionProvider(raw: string): VisionProvider {
+  const provider = raw.toLowerCase();
+  if (provider === "openrouter" || provider === "ollama" || provider === "gemini") {
+    return provider;
+  }
+  if (provider === "deepseek") return "openrouter";
+  return "openrouter";
+}
+
 function isTxtName(name: string): boolean {
   return /\.txt$/i.test(name);
 }
@@ -34,7 +43,9 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const rawTextField = formData.get("rawText");
     const file = formData.get("file");
-    const provider = (formData.get("provider") as string) || "gemini";
+    const provider = normalizeVisionProvider(
+      (formData.get("provider") as string) || "openrouter",
+    );
     const fixNames = formData.get("fixNames") === "true";
     const fixNamesWeb = formData.get("fixNamesWeb") === "true";
     const fixNamesProvider =
@@ -61,14 +72,14 @@ export async function POST(req: NextRequest) {
           text = await transcribeHandwritingFromBuffer({
             buffer: buf,
             mimeType: "application/pdf",
-            provider: provider as VisionProvider,
+            provider,
           });
         }
       } else if (isImageMime(file.type)) {
         text = await transcribeHandwritingFromBuffer({
           buffer: buf,
           mimeType: file.type,
-          provider: provider as VisionProvider,
+          provider,
         });
       } else {
         return NextResponse.json(

@@ -19,6 +19,10 @@ function parseArgs(argv: string[]): {
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+    if (a === "--openrouter") {
+      provider = "openrouter";
+      continue;
+    }
     if (a === "--gemini") {
       provider = "gemini";
       continue;
@@ -38,8 +42,8 @@ function parseArgs(argv: string[]): {
     }
     if (a === "--provider" && argv[i + 1]) {
       const p = argv[++i];
-      if (p !== "gemini" && p !== "ollama") {
-        throw new Error('--provider musí být "gemini" nebo "ollama"');
+      if (p !== "openrouter" && p !== "gemini" && p !== "ollama") {
+        throw new Error('--provider musí být "openrouter", "gemini" nebo "ollama"');
       }
       provider = p;
       continue;
@@ -55,7 +59,7 @@ function parseArgs(argv: string[]): {
 
 function defaultProviderFromEnv(): VisionProvider | null {
   const p = process.env.VISION_PROVIDER?.toLowerCase();
-  if (p === "gemini" || p === "ollama") return p;
+  if (p === "openrouter" || p === "gemini" || p === "ollama") return p;
   return null;
 }
 
@@ -106,7 +110,7 @@ async function main() {
       provider ?? defaultProviderFromEnv() ?? inferProviderFromEnv();
     if (!p) {
       console.error(
-        "Pro obrázek nastav provider: --gemini | --ollama nebo VISION_PROVIDER=gemini|ollama",
+        "Pro obrázek nastav provider: --openrouter | --gemini | --ollama nebo VISION_PROVIDER=openrouter|gemini|ollama",
       );
       process.exit(1);
     }
@@ -162,6 +166,7 @@ async function main() {
 }
 
 function inferProviderFromEnv(): VisionProvider | null {
+  if (process.env.OPENROUTER_API_KEY) return "openrouter";
   if (process.env.GEMINI_API_KEY) return "gemini";
   if (process.env.OLLAMA_VISION_MODEL) return "ollama";
   return null;
@@ -177,12 +182,16 @@ Použití:
     set GEMINI_API_KEY=...   (PowerShell: $env:GEMINI_API_KEY="...")
     npx tsx src/index.ts --gemini sken.jpg
 
+  Foto (OpenRouter):
+    set OPENROUTER_API_KEY=...   (PowerShell: $env:OPENROUTER_API_KEY="...")
+    npx tsx src/index.ts --openrouter sken.jpg
+
   Foto (Ollama, lokálně):
     ollama pull llava
     set OLLAMA_VISION_MODEL=llava
     npx tsx src/index.ts --ollama sken.jpg
 
-Volitelně: VISION_PROVIDER=gemini|ollama v .env
+Volitelně: VISION_PROVIDER=openrouter|gemini|ollama v .env
 
   Korekce názvů firem (Gemini, po parsování):
     npx tsx src/index.ts --fix-names podklad.txt
