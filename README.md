@@ -18,7 +18,7 @@ Server načítá v tomto pořadí (pozdější přepíše dřívější):
 2. `.env`
 3. `.env.local`
 
-Stačí mít `GEMINI_API_KEY` (a případně Ollama), pro korekci přes DeepSeek navíc **`DEEPSEEK_API_KEY`**, v **`.env`** nebo **`.env.local`** – případně v `invoice-assistant/.env`.
+Stačí mít `GEMINI_API_KEY` (a případně Ollama), pro korekci přes OpenRouter navíc **`OPENROUTER_API_KEY`**, v **`.env`** nebo **`.env.local`** – případně v `invoice-assistant/.env`.
 
 Implementace: [`src/lib/loadEnv.ts`](src/lib/loadEnv.ts) – volá se při startu serveru ([`instrumentation`](src/instrumentation.ts)) a znovu na začátku [`/api/process`](src/app/api/process/route.ts).
 
@@ -26,7 +26,7 @@ Implementace: [`src/lib/loadEnv.ts`](src/lib/loadEnv.ts) – volá se při start
 
 ```bash
 npm install
-copy .env.example .env   # nebo .env.local; doplň GEMINI / DEEPSEEK podle potřeby
+copy .env.example .env   # nebo .env.local; doplň GEMINI / OPENROUTER podle potřeby
 npm run dev
 ```
 
@@ -37,7 +37,7 @@ Otevři [http://localhost:3000](http://localhost:3000).
 - **Textový podklad (.txt nebo vložený text)** – API klíče nepotřebuješ.
 - **PDF** – nejdřív se čte textová vrstva (bez klíče). Je-li to sken bez textu, použije se **Gemini** (`GEMINI_API_KEY`) a celé PDF se pošle do modelu jako dokument. Ollama sken PDF neumí – nahraj PNG/JPEG nebo přepni na Gemini.
 - **Foto podkladu** – `GEMINI_API_KEY` v `.env` nebo `.env.local` (Gemini), nebo lokální Ollama + `OLLAMA_VISION_MODEL`.
-- **Korekce názvů** – v záložce Faktura zvol **Gemini** (`GEMINI_API_KEY`, volitelně vyhledávání na webu) nebo **DeepSeek** (`DEEPSEEK_API_KEY`, model default `deepseek-chat`). Vlastní instrukce v poli pod tím platí pro oba.
+- **Korekce názvů** – v záložce Faktura zvol **Gemini** (`GEMINI_API_KEY`, volitelně vyhledávání na webu) nebo **OpenRouter** (`OPENROUTER_API_KEY`, model default `deepseek/deepseek-chat-v3-0324`). Vlastní instrukce v poli pod tím platí pro oba.
 
 Údaje o dodavateli v formuláři se ukládají do `localStorage` v prohlížeči.
 

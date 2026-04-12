@@ -3,7 +3,7 @@ import {
   parseTripText,
   transcribeHandwritingFromBuffer,
   correctTripLineDescriptions,
-  correctTripLineDescriptionsDeepSeek,
+  correctTripLineDescriptionsOpenRouter,
 } from "invoice-assistant";
 import type { VisionProvider } from "invoice-assistant";
 import { extractTextFromPdfBuffer } from "@/lib/extractPdfText";
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     const fixNames = formData.get("fixNames") === "true";
     const fixNamesWeb = formData.get("fixNamesWeb") === "true";
     const fixNamesProvider =
-      (formData.get("fixNamesProvider") as string) || "gemini";
+      ((formData.get("fixNamesProvider") as string) || "gemini").toLowerCase();
     const userInstructions = formData.get("userInstructions")?.toString() || undefined;
 
     let text: string;
@@ -92,21 +92,24 @@ export async function POST(req: NextRequest) {
 
     if (fixNames) {
       let corrected;
-      if (fixNamesProvider === "deepseek") {
-        const key = process.env.DEEPSEEK_API_KEY;
+      if (fixNamesProvider === "openrouter" || fixNamesProvider === "deepseek") {
+        const key =
+          process.env.OPENROUTER_API_KEY?.trim() ||
+          process.env.DEEPSEEK_API_KEY?.trim();
         if (!key?.trim()) {
           return NextResponse.json(
             {
               error:
-                "Pro korekci přes DeepSeek nastav DEEPSEEK_API_KEY v .env (viz .env.example).",
+                "Pro korekci přes OpenRouter nastav OPENROUTER_API_KEY v .env (volitelně fallback DEEPSEEK_API_KEY).",
             },
             { status: 400 },
           );
         }
-        corrected = await correctTripLineDescriptionsDeepSeek(parsed.lines, {
+        corrected = await correctTripLineDescriptionsOpenRouter(parsed.lines, {
           apiKey: key,
-          model: process.env.DEEPSEEK_MODEL,
-          baseUrl: process.env.DEEPSEEK_API_BASE,
+          model: process.env.OPENROUTER_MODEL ?? process.env.DEEPSEEK_MODEL,
+          baseUrl:
+            process.env.OPENROUTER_API_BASE ?? process.env.DEEPSEEK_API_BASE,
           rawTranscript: text,
           userInstructions,
         });
