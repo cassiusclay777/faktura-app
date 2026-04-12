@@ -1,6 +1,6 @@
 import { loadImageAsBase64, loadImageBufferAsBase64 } from "./imageFile.js";
 import { transcribeWithGemini } from "./geminiVision.js";
-import { transcribeWithOpenRouter } from "./openRouterVision.js";
+import { transcribeWithOpenRouter } from "./openrouter-vision.js";
 import { transcribeWithOllama } from "./ollamaVision.js";
 
 export type VisionProvider = "openrouter" | "gemini" | "ollama";

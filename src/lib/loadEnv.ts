@@ -1,7 +1,7 @@
 import { config } from "dotenv";
-import { existsSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 let loaded = false;
 
