@@ -5,27 +5,27 @@ import {
   mergeCorrectedDescriptions,
 } from "./correctNamesCommon.js";
 
-export type CorrectNamesDeepSeekOptions = {
+export type CorrectNamesOpenRouterOptions = {
   apiKey: string;
-  /** např. deepseek-chat */
+  /** např. deepseek/deepseek-chat-v3-0324 */
   model?: string;
-  /** Výchozí OpenAI-kompatibilní endpoint DeepSeek */
+  /** Výchozí OpenAI-kompatibilní endpoint OpenRouter */
   baseUrl?: string;
   rawTranscript?: string;
   userInstructions?: string;
 };
 
 /**
- * Korekce názvů přes DeepSeek API (OpenAI-kompatibilní chat).
+ * Korekce názvů přes OpenRouter API (OpenAI-kompatibilní chat).
  */
-export async function correctTripLineDescriptionsDeepSeek(
+export async function correctTripLineDescriptionsOpenRouter(
   lines: TripLine[],
-  opts: CorrectNamesDeepSeekOptions,
+  opts: CorrectNamesOpenRouterOptions,
 ): Promise<TripLine[]> {
   if (lines.length === 0) return lines;
 
-  const base = (opts.baseUrl ?? "https://api.deepseek.com").replace(/\/$/, "");
-  const model = opts.model ?? "deepseek-chat";
+  const base = (opts.baseUrl ?? "https://openrouter.ai/api").replace(/\/$/, "");
+  const model = opts.model ?? "deepseek/deepseek-chat-v3-0324";
 
   const userPrompt = buildCorrectNamesUserPrompt(lines, {
     useWebSearch: false,
@@ -49,7 +49,7 @@ export async function correctTripLineDescriptionsDeepSeek(
   if (!res.ok) {
     const errBody = await res.text();
     throw new Error(
-      `DeepSeek API ${res.status}: ${errBody.slice(0, 600)}`,
+      `OpenRouter API ${res.status}: ${errBody.slice(0, 600)}`,
     );
   }
 
@@ -58,7 +58,7 @@ export async function correctTripLineDescriptionsDeepSeek(
   };
   const text = data.choices?.[0]?.message?.content;
   if (!text?.trim()) {
-    throw new Error("DeepSeek (korekce názvů) vrátil prázdnou odpověď.");
+    throw new Error("OpenRouter (korekce názvů) vrátil prázdnou odpověď.");
   }
 
   let parsed: unknown;
@@ -66,7 +66,7 @@ export async function correctTripLineDescriptionsDeepSeek(
     parsed = extractJsonArray(text);
   } catch (e) {
     throw new Error(
-      `Nepodařilo se zparsovat JSON z korekce (DeepSeek): ${(e as Error).message}`,
+      `Nepodařilo se zparsovat JSON z korekce (OpenRouter): ${(e as Error).message}`,
     );
   }
 
