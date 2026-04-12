@@ -1,144 +1,76 @@
-import { loadImageAsBase64 } from "./imageFile.js";
+import { HANDWRITING_TRANSCRIBE_PROMPT } from "./prompt.js";
 
 export type OpenRouterVisionOptions = {
   apiKey: string;
-  model?: string; // výchozí "qwen/qwen2.5-vl-72b-instruct"
-  baseUrl?: string; // výchozí "https://openrouter.ai/api/v1"
-  imagePath: string;
-  prompt?: string;
-  maxTokens?: number;
-  temperature?: number;
-  verbose?: boolean;
-  /** Referer pro OpenRouter statistiky (nepovinné) */
-  httpReferer?: string;
-  /** Název aplikace pro OpenRouter */
-  appTitle?: string;
+  /** např. google/gemini-2.5-flash-lite */
+  model?: string;
+  /** Výchozí OpenAI-kompatibilní endpoint OpenRouter */
+  baseUrl?: string;
+  mimeType: string;
+  base64: string;
 };
 
-type OpenRouterMessage = {
-  role: "user" | "system" | "assistant";
-  content: string | Array<{
-    type: "text" | "image_url";
-    text?: string;
-    image_url?: {
-      url: string;
-      detail?: "low" | "high" | "auto";
-    };
-  }>;
-};
-
-const DEFAULT_SYSTEM_PROMPT = `Jsi specializovaný OCR asistent pro české dokumenty.
-Tvým úkolem je PŘESNĚ přepsat veškerý text z dodaného obrázku (faktura, účtenka, výpis jízdy).
-
-PRAVIDLA:
-1. Přepiš VŠECHEN text, který na obrázku vidíš – čísla, data, názvy firem, částky, variabilní symboly, vše.
-2. Zachovej strukturu a formátování tam, kde to dává smysl.
-3. Pokud je text rozmazaný nebo nečitelný, napiš "[nečitelné]".
-4. NEVYMÝŠLEJ SI nic, co na obrázku není.
-5. Odpověz POUZE přepsaným textem, žádné komentáře, vysvětlivky ani formátování navíc.`;
+function extractContentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((item) => {
+      if (!item || typeof item !== "object") return "";
+      const block = item as { type?: unknown; text?: unknown };
+      return block.type === "text" && typeof block.text === "string"
+        ? block.text
+        : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
 
 /**
- * Přepíše text z obrázku pomocí OpenRouter API s multimodálním modelem.
- * Používá Qwen2.5-VL-72B-Instruct (zdarma na OpenRouteru).
+ * OpenRouter /v1/chat/completions – multimodální model přes OpenAI-compatible API.
  */
 export async function transcribeWithOpenRouter(
-  opts: OpenRouterVisionOptions
+  opts: OpenRouterVisionOptions,
 ): Promise<string> {
-  const apiKey = opts.apiKey.trim();
-  if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY není nastaven");
-  }
+  const base = (opts.baseUrl ?? "https://openrouter.ai/api").replace(/\/$/, "");
+  const model = opts.model ?? "google/gemini-2.5-flash-lite";
+  const imageUrl = `data:${opts.mimeType};base64,${opts.base64}`;
 
-  const baseUrl = opts.baseUrl ?? "https://openrouter.ai/api/v1";
-  const model = opts.model ?? "qwen/qwen2.5-vl-72b-instruct";
-  const prompt = opts.prompt ?? "Přepiš přesně všechen text z tohoto obrázku.";
-  
-  const { mimeType, base64: base64Image } = loadImageAsBase64(opts.imagePath);
-  const dataUrl = `data:${mimeType};base64,${base64Image}`;
-
-  if (opts.verbose) {
-    console.error(`[OpenRouter] Používám model: ${model}`);
-    console.error(`[OpenRouter] Obrázek: ${opts.imagePath} (${mimeType})`);
-  }
-
-  const messages: OpenRouterMessage[] = [
-    {
-      role: "system",
-      content: DEFAULT_SYSTEM_PROMPT,
+  const res = await fetch(`${base}/v1/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${opts.apiKey}`,
     },
-    {
-      role: "user",
-      content: [
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      messages: [
         {
-          type: "text",
-          text: prompt,
-        },
-        {
-          type: "image_url",
-          image_url: {
-            url: dataUrl,
-            detail: "high", // Vyšší přesnost pro OCR
-          },
+          role: "user",
+          content: [
+            { type: "text", text: HANDWRITING_TRANSCRIBE_PROMPT },
+            { type: "image_url", image_url: { url: imageUrl } },
+          ],
         },
       ],
-    },
-  ];
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${apiKey}`,
-  };
-
-  // OpenRouter specifické hlavičky pro atribuci
-  if (opts.httpReferer) {
-    headers["HTTP-Referer"] = opts.httpReferer;
-  }
-  if (opts.appTitle) {
-    headers["X-OpenRouter-Title"] = opts.appTitle;
-  }
-
-  const requestBody = {
-    model,
-    messages,
-    max_tokens: opts.maxTokens ?? 4000,
-    temperature: opts.temperature ?? 0.1, // Nízká teplota pro přesný přepis
-  };
-
-  if (opts.verbose) {
-    console.error(`[OpenRouter] Odesílám požadavek na API...`);
-  }
-
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(requestBody),
+    }),
   });
 
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`OpenRouter API ${res.status}: ${errBody.slice(0, 600)}`);
+    throw new Error(`OpenRouter OCR ${res.status}: ${errBody.slice(0, 600)}`);
   }
 
   const data = (await res.json()) as {
     choices?: Array<{
       message?: {
-        content?: string;
+        content?: unknown;
       };
     }>;
-    usage?: {
-      total_tokens: number;
-      cost?: number;
-    };
   };
-
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error("OpenRouter API vrátilo prázdnou odpověď.");
+  const text = extractContentText(data.choices?.[0]?.message?.content);
+  if (!text?.trim()) {
+    throw new Error("OpenRouter OCR vrátil prázdný text.");
   }
-
-  if (opts.verbose && data.usage) {
-    console.error(`[OpenRouter] Tokeny: ${data.usage.total_tokens}, Cena: $${data.usage.cost?.toFixed(6) ?? "N/A"}`);
-  }
-
-  return content.trim();
+  return text.trim();
 }

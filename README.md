@@ -2,7 +2,7 @@
 
 Next.js aplikace s vestavěným balíčkem **`invoice-assistant`**: načte textový podklad nebo fotku, parsuje řádky jízd, umožní doplnit dodavatele/odběratele a zobrazí **náhled faktury** vhodný k **tisku / uložení jako PDF** (prohlížeč → Tisk → Uložit jako PDF).
 
-**iDoklad:** v záložce Náhled můžeš **zkopírovat údaje do schránky** a **otevřít** [novou fakturu v iDokladu](https://app.idoklad.cz/IssuedInvoice/Create) – webové UI nepřijímá automatické předvyplnění z externí aplikace; plná integrace je přes [REST API + OAuth](https://api.idoklad.cz/) (viz `invoice-assistant/README.md`).
+**Do iDokladu se nic neposílá** – jde o vytvoření faktury jako dokumentu.
 
 ## Požadavky
 
@@ -18,15 +18,15 @@ Server načítá v tomto pořadí (pozdější přepíše dřívější):
 2. `.env`
 3. `.env.local`
 
-Pro **přepis z fotky/PDF** a **korekci názvů** nastav **`DEEPSEEK_API_KEY`** (výchozí ve UI), případně jen **Ollama** (`OLLAMA_VISION_MODEL` + `OLLAMA_BASE_URL`) – v **`.env`** nebo **`.env.local`**, případně v `invoice-assistant/.env`.
+Stačí mít **`OPENROUTER_API_KEY`** (a případně Ollama), pro volitelnou korekci přes Gemini navíc `GEMINI_API_KEY`, v **`.env`** nebo **`.env.local`** – případně v `invoice-assistant/.env`.
 
-Implementace: [`src/lib/loadEnv.ts`](src/lib/loadEnv.ts) – volá se při načtení a na začátku požadavku v [`/api/process`](src/app/api/process/route.ts) (Node runtime).
+Implementace: [`src/lib/loadEnv.ts`](src/lib/loadEnv.ts) – volá se při startu serveru ([`instrumentation`](src/instrumentation.ts)) a znovu na začátku [`/api/process`](src/app/api/process/route.ts).
 
 ## Spuštění
 
 ```bash
 npm install
-copy .env.example .env   # Windows; na Unixu: cp .env.example .env  — pak doplň DEEPSEEK (nebo Ollama) podle potřeby
+copy .env.example .env   # nebo .env.local; doplň OPENROUTER / OLLAMA / GEMINI podle potřeby
 npm run dev
 ```
 
@@ -35,9 +35,9 @@ Otevři [http://localhost:3000](http://localhost:3000).
 ## Konfigurace
 
 - **Textový podklad (.txt nebo vložený text)** – API klíče nepotřebuješ.
-- **PDF** – nejdřív se čte textová vrstva (bez klíče). Je-li to sken bez textu, použije se **Ollama** (první stránka jako obrázek) nebo **jiný OpenAI-kompatibilní vision endpoint** (`DEEPSEEK_VISION_API_BASE` + model, typicky OpenRouter — viz `.env.example`). Samotné **api.deepseek.com je jen text**, OCR z obrázku přes ně nejde.
-- **Foto podkladu** – **`DEEPSEEK_API_KEY`** (cloud) nebo lokální **Ollama** + `OLLAMA_VISION_MODEL`.
-- **Korekce názvů** – **`DEEPSEEK_API_KEY`**, model default `deepseek-chat`. „Vyhledávat na webu“ používá nástroj `web_search`; volitelně **`PERPLEXITY_API_KEY`** (Sonar) a/nebo **`TAVILY_API_KEY`**; případně `DEEPSEEK_WEB_SEARCH_PROVIDER=perplexity|tavily` (viz `.env.example`).
+- **PDF** – nejdřív se čte textová vrstva (bez klíče). Je-li to sken bez textu, jde OCR přes zvolený provider z UI (OpenRouter/Ollama); Ollama sken PDF neumí – nahraj PNG/JPEG.
+- **Foto podkladu** – `OPENROUTER_API_KEY` (OpenRouter) nebo lokální Ollama + `OLLAMA_VISION_MODEL`.
+- **Korekce názvů** – v záložce Faktura zvol **Gemini** (`GEMINI_API_KEY`, volitelně vyhledávání na webu) nebo **OpenRouter** (`OPENROUTER_API_KEY`, model default `deepseek/deepseek-chat-v3-0324`). Vlastní instrukce v poli pod tím platí pro oba.
 
 Údaje o dodavateli v formuláři se ukládají do `localStorage` v prohlížeči.
 

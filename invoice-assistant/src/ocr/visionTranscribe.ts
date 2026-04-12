@@ -1,14 +1,9 @@
 import { loadImageAsBase64, loadImageBufferAsBase64 } from "./imageFile.js";
+import { transcribeWithGemini } from "./geminiVision.js";
+import { transcribeWithOpenRouter } from "./openRouterVision.js";
 import { transcribeWithOllama } from "./ollamaVision.js";
-import { transcribeDeepSeekPathFromImage } from "./deepseekVisionOcr.js";
-import { transcribeWithOpenRouter } from "./openrouterVision.js";
 
-export {
-  hasDeepSeekVisionOcrCredentials,
-  resolveDeepSeekVisionOcrApiKey,
-} from "./deepseekVisionOcr.js";
-
-export type VisionProvider = "ollama" | "deepseek" | "openrouter";
+export type VisionProvider = "openrouter" | "gemini" | "ollama";
 
 export type TranscribeOptions = {
   imagePath: string;
@@ -27,11 +22,12 @@ function env(name: string): string | undefined {
 }
 
 /**
- * Přepis ručně psaného listu z fotky – DeepSeek (cloud) nebo Ollama (lokálně).
+ * Přepis ručně psaného listu z fotky – OpenRouter/Gemini (cloud) nebo Ollama (lokálně).
  *
  * Env:
- * - DeepSeek: DEEPSEEK_API_KEY (+ volitelně DEEPSEEK_VISION_API_BASE / DEEPSEEK_API_BASE pro vision endpoint)
- * - Ollama: OLLAMA_BASE_URL, OLLAMA_VISION_MODEL
+ * - OpenRouter: OPENROUTER_API_KEY, volitelně OPENROUTER_VISION_MODEL (default google/gemini-2.5-flash-lite)
+ * - Gemini: GEMINI_API_KEY, volitelně GEMINI_MODEL (default gemini-2.5-flash)
+ * - Ollama: OLLAMA_BASE_URL (default http://127.0.0.1:11434), OLLAMA_VISION_MODEL (povinné, např. llava)
  */
 async function transcribeWithProvider(
   mimeType: string,
@@ -39,26 +35,39 @@ async function transcribeWithProvider(
   provider: VisionProvider,
 ): Promise<string> {
   const m = mimeType.split(";")[0]?.trim().toLowerCase() ?? mimeType;
-  if (m === "application/pdf" && (provider === "ollama" || provider === "deepseek")) {
+  if (m === "application/pdf" && provider === "ollama") {
     throw new Error(
-      "Interní chyba: skenované PDF musí být před OCR převedeno na obrázek (první stránka). Zkus znovu nahrát soubor.",
+      "Skenované PDF (bez textové vrstvy) přes Ollama nepodporujeme – v UI zvol OpenRouter, nebo nahraj stránku jako obrázek.",
     );
   }
-
-  if (provider === "deepseek") {
-    return transcribeDeepSeekPathFromImage(mimeType, base64);
-  }
-
   if (provider === "openrouter") {
     const apiKey = env("OPENROUTER_API_KEY");
     if (!apiKey) {
-      throw new Error("Pro OpenRouter nastav OPENROUTER_API_KEY v .env.");
+      throw new Error(
+        "Chybí OPENROUTER_API_KEY. Získej klíč na https://openrouter.ai/keys",
+      );
     }
-    // Pro OpenRouter potřebujeme cestu k souboru, ne base64
-    // Tohle je dočasné řešení - v reálu bychom měli předat cestu
-    throw new Error(
-      "OpenRouter provider vyžaduje cestu k souboru. Použij --openrouter s cestou k obrázku."
-    );
+    return transcribeWithOpenRouter({
+      apiKey,
+      model: env("OPENROUTER_VISION_MODEL"),
+      baseUrl: env("OPENROUTER_API_BASE"),
+      mimeType,
+      base64,
+    });
+  }
+  if (provider === "gemini") {
+    const apiKey = env("GEMINI_API_KEY");
+    if (!apiKey) {
+      throw new Error(
+        "Chybí GEMINI_API_KEY. Získej klíč na https://aistudio.google.com/apikey",
+      );
+    }
+    return transcribeWithGemini({
+      apiKey,
+      model: env("GEMINI_MODEL"),
+      mimeType,
+      base64,
+    });
   }
 
   const model = env("OLLAMA_VISION_MODEL");

@@ -1,4 +1,4 @@
-/** Společný prompt pro Gemini i Ollama – výstup má jít rovnou do parseTripText. */
+/** Společný prompt pro OpenRouter/Gemini/Ollama – výstup má jít rovnou do parseTripText. */
 export const HANDWRITING_TRANSCRIBE_PROMPT = `Jsi asistent pro přepis ručně psaného výpisu jízd (čeština).
 
 Úkoly:

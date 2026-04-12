@@ -11,10 +11,11 @@ function projectRoot(): string {
 }
 
 /**
- * Doplní `process.env` (stejné pořadí jako v README).
- * **DeepSeek** (`DEEPSEEK_API_KEY`, …). Pro web u korekce volitelně **PERPLEXITY_API_KEY** / **TAVILY_API_KEY** (jinak DuckDuckGo).
+ * Doplní `process.env` ze souborů v kořeni `faktura-app` (vedle toho, co už načte Next.js).
+ * Pro API používají stejné proměnné i **Gemini** (`GEMINI_API_KEY`, `GEMINI_MODEL`) a **OpenRouter** (`OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_API_BASE`).
+ * Kvůli zpětné kompatibilitě zůstává fallback i na `DEEPSEEK_*`.
  *
- * Pořadí: `invoice-assistant/.env` → `.env` → `.env.local` (pozdější přepíše dřívější).
+ * Pořadí: `invoice-assistant/.env` → `.env` → `.env.local` (každý další přepíše).
  */
 export function loadServerEnv(): void {
   if (loaded) return;
