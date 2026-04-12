@@ -1,0 +1,297 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  parseTripText,
+  transcribeHandwritingFromBuffer,
+  correctTripLineDescriptionsDeepSeek,
+  hasDeepSeekVisionOcrCredentials,
+} from "invoice-assistant";
+import type { VisionProvider } from "invoice-assistant";
+import { extractTextFromPdfBuffer } from "@/lib/extractPdfText";
+import { loadServerEnv } from "@/lib/loadEnv";
+import { searchWebForCorrection } from "@/lib/webSearch";
+import {
+  validateRequest,
+  createValidationErrorResponse,
+  rateLimit,
+  createRateLimitResponse,
+  validateFile,
+  sanitizeObject,
+  apiResponse,
+  apiError,
+  ValidationError,
+} from "@/lib/apiValidation";
+import { processRequestSchema } from "@/lib/validation";
+
+loadServerEnv();
+
+export const runtime = "nodejs";
+export const maxDuration = 120;
+
+const RETRY_DELAYS_MS = [700, 1500];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableAiError(e: unknown): boolean {
+  const message = e instanceof Error ? e.message : String(e);
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("429") ||
+    normalized.includes("retry in") ||
+    normalized.includes("rate limit") ||
+    normalized.includes("too many requests") ||
+    normalized.includes("503") ||
+    normalized.includes("service unavailable") ||
+    normalized.includes("high demand") ||
+    (normalized.includes("vision ocr") &&
+      (normalized.includes("429") ||
+        normalized.includes("502") ||
+        normalized.includes("503")))
+  );
+}
+
+async function retryTransient<T>(fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      if (!isRetryableAiError(e) || attempt === RETRY_DELAYS_MS.length) {
+        throw e;
+      }
+      await sleep(RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  throw lastError;
+}
+
+function isTxtName(name: string): boolean {
+  return /\.txt$/i.test(name);
+}
+
+function isImageMime(mime: string): boolean {
+  return /^image\/(jpeg|png|webp|gif)$/i.test(mime.split(";")[0]?.trim() ?? "");
+}
+
+function isPdfFile(name: string, mime: string): boolean {
+  if (/\.pdf$/i.test(name)) return true;
+  const m = mime.split(";")[0]?.trim() ?? "";
+  return m === "application/pdf";
+}
+
+export async function POST(req: NextRequest) {
+  loadServerEnv();
+  
+  // Apply rate limiting
+  const rateLimitResult = rateLimit(req, "process");
+  if (rateLimitResult.limited) {
+    return createRateLimitResponse(100, rateLimitResult.resetTime!);
+  }
+  
+  try {
+    // Validate request
+    const validatedData = await validateRequest(req, processRequestSchema);
+    const sanitizedData = sanitizeObject(validatedData);
+    
+    const { rawText, provider, fixNames, userInstructions, fixNamesIdokladStyle, styleReference, file } = sanitizedData;
+    
+    // If file is provided, validate it
+    if (file) {
+      const fileValidation = validateFile(file);
+      if (!fileValidation.valid) {
+        return apiError(fileValidation.error!, 400);
+      }
+    }
+
+    let text: string;
+
+    if (file && file instanceof File && file.size > 0) {
+      const buf = Buffer.from(await file.arrayBuffer());
+      const name = file.name || "";
+      if (isTxtName(name) || file.type === "text/plain") {
+        text = buf.toString("utf8");
+      } else if (isPdfFile(name, file.type)) {
+        let extracted = "";
+        try {
+          extracted = await extractTextFromPdfBuffer(buf);
+        } catch {
+          extracted = "";
+        }
+        if (extracted) {
+          text = extracted;
+        } else {
+          if (provider === "deepseek" && !hasDeepSeekVisionOcrCredentials()) {
+            return apiError(
+              "Skenované PDF: nastav DEEPSEEK_API_KEY (vision přes api.deepseek.com) nebo použij Ollama s vision modelem.",
+              400
+            );
+          }
+
+          let vBuf: Buffer = buf;
+          let vMime = "application/pdf";
+          if (provider === "ollama" || provider === "deepseek") {
+            const { renderPdfFirstPageToPngBuffer } =
+              await import("@/lib/pdfFirstPagePng");
+            vBuf = Buffer.from(await renderPdfFirstPageToPngBuffer(buf));
+            vMime = "image/png";
+          }
+
+          text =
+            provider === "deepseek"
+              ? await retryTransient(() =>
+                  transcribeHandwritingFromBuffer({
+                    buffer: vBuf,
+                    mimeType: vMime,
+                    provider,
+                  }),
+                )
+              : await transcribeHandwritingFromBuffer({
+                  buffer: vBuf,
+                  mimeType: vMime,
+                  provider,
+                });
+        }
+      } else if (isImageMime(file.type)) {
+        if (provider === "deepseek" && !hasDeepSeekVisionOcrCredentials()) {
+          return apiError(
+            "Foto podkladu: nastav DEEPSEEK_API_KEY (vision přes api.deepseek.com) nebo použij Ollama s vision modelem.",
+            400
+          );
+        }
+        text = await retryTransient(() =>
+          transcribeHandwritingFromBuffer({
+            buffer: buf,
+            mimeType: file.type,
+            provider,
+          }),
+        );
+      } else {
+        return apiError("Nepodporovaný typ souboru.", 400);
+      }
+    } else if (rawText && rawText.trim()) {
+      text = rawText;
+    } else {
+      return apiError("Vlož text podkladu nebo nahraj soubor.", 400);
+    }
+        if (extracted) {
+          text = extracted;
+        } else {
+          if (provider === "deepseek" && !hasDeepSeekVisionOcrCredentials()) {
+            return NextResponse.json(
+              {
+                error:
+                  "Skenované PDF: nastav DEEPSEEK_API_KEY (vision přes api.deepseek.com) nebo použij Ollama s vision modelem.",
+              },
+              { status: 400 },
+            );
+          }
+
+          let vBuf: Buffer = buf;
+          let vMime = "application/pdf";
+          if (provider === "ollama" || provider === "deepseek") {
+            const { renderPdfFirstPageToPngBuffer } =
+              await import("@/lib/pdfFirstPagePng");
+            vBuf = Buffer.from(await renderPdfFirstPageToPngBuffer(buf));
+            vMime = "image/png";
+          }
+
+          text =
+            provider === "deepseek"
+              ? await retryTransient(() =>
+                  transcribeHandwritingFromBuffer({
+                    buffer: vBuf,
+                    mimeType: vMime,
+                    provider,
+                  }),
+                )
+              : await transcribeHandwritingFromBuffer({
+                  buffer: vBuf,
+                  mimeType: vMime,
+                  provider,
+                });
+        }
+      } else if (isImageMime(file.type)) {
+        text =
+          provider === "deepseek"
+            ? await retryTransient(() =>
+                transcribeHandwritingFromBuffer({
+                  buffer: buf,
+                  mimeType: file.type,
+                  provider,
+                }),
+              )
+            : await transcribeHandwritingFromBuffer({
+                buffer: buf,
+                mimeType: file.type,
+                provider,
+              });
+      } else {
+        return NextResponse.json(
+          {
+            error:
+              "Podporované jsou .txt, PDF, nebo obrázek (JPEG, PNG, WebP, GIF).",
+          },
+          { status: 400 },
+        );
+      }
+    } else if (typeof rawTextField === "string" && rawTextField.trim()) {
+      text = rawTextField;
+    } else {
+      return NextResponse.json(
+        { error: "Vlož text podkladu nebo nahraj soubor." },
+        { status: 400 },
+      );
+    }
+
+    let parsed = parseTripText(text);
+
+    if (fixNames) {
+      const key = process.env.DEEPSEEK_API_KEY;
+      if (!key?.trim()) {
+        return NextResponse.json(
+          {
+            error:
+              "Pro korekci názvů nastav DEEPSEEK_API_KEY. Webové ověření: volitelně PERPLEXITY_API_KEY nebo TAVILY_API_KEY, jinak se použije DuckDuckGo.",
+          },
+          { status: 400 },
+        );
+      }
+      const corrected = await retryTransient(() =>
+        correctTripLineDescriptionsDeepSeek(parsed.lines, {
+          apiKey: key.trim(),
+          model: process.env.DEEPSEEK_MODEL,
+          baseUrl: process.env.DEEPSEEK_API_BASE,
+          rawTranscript: text,
+          userInstructions,
+          useWebSearch: true,
+          webSearch: searchWebForCorrection,
+          idokladStyle: fixNamesIdokladStyle,
+          styleReference,
+        }),
+      );
+      parsed = {
+        lines: corrected,
+        sumBase:
+          Math.round(
+            corrected.reduce((s, t) => s + t.baseAmount, 0) * 100,
+          ) / 100,
+      };
+    }
+
+    return NextResponse.json({ rawTranscript: text, parsed });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (isRetryableAiError(e)) {
+      return NextResponse.json(
+        {
+          error:
+            "AI služba je dočasně přetížená nebo limitovaná (429/503). Zkus to za pár sekund.",
+        },
+        { status: 429 },
+      );
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

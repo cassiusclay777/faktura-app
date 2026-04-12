@@ -14,6 +14,8 @@ export type {
 } from "./ocr/visionTranscribe.js";
 export { correctTripLineDescriptions } from "./ocr/correctNamesGemini.js";
 export type { CorrectNamesOptions } from "./ocr/correctNamesGemini.js";
+export { correctTripLineDescriptionsOpenRouter } from "./ocr/correctNamesOpenRouter.js";
+export type { CorrectNamesOpenRouterOptions } from "./ocr/correctNamesOpenRouter.js";
 export { correctTripLineDescriptionsDeepSeek } from "./ocr/correctNamesDeepSeek.js";
 export type { CorrectNamesDeepSeekOptions } from "./ocr/correctNamesDeepSeek.js";
 export { loadImageBufferAsBase64 } from "./ocr/imageFile.js";

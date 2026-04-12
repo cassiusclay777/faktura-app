@@ -1,0 +1,14 @@
+# Aider v tomto repozitáři: oficiální DeepSeek API (OpenAI-kompatibilní).
+# OpenRouter model deepseek-r1:free často vrací 404 („No endpoints“) — nepoužíváme ho.
+#
+# Spusť z kořene projektu:  .\scripts\aider-deepseek.ps1
+# (nastaví OPENAI_API_KEY z DEEPSEEK_API_KEY a doplní OPENAI_API_BASE.)
+#
+# Bez skriptu musíš mít v .env i OPENAI_API_KEY = stejná hodnota jako DEEPSEEK_API_KEY.
+
+model: deepseek-chat
+openai-api-base: https://api.deepseek.com/v1
+
+# Repo-map / shrnování — také DeepSeek, aby se nevolalo Gemini (jinak chyby při neplatném GEMINI_API_KEY).
+weak-model: deepseek-chat
+editor-model: deepseek-chat

@@ -6,32 +6,52 @@
     "node": ">=20"
   },
   "scripts": {
+    "clean": "node -e \"const fs=require('node:fs'); fs.rmSync('.next',{recursive:true,force:true}); fs.rmSync('tsconfig.tsbuildinfo',{force:true});\"",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "npm --prefix invoice-assistant run test"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:invoice-assistant": "npm --prefix invoice-assistant run test"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
+    "@napi-rs/canvas": "^0.1.80",
+    "@openrouter/sdk": "^0.12.0",
     "@tailwindcss/postcss": "^4",
-    "dotenv": "^17.3.1",
+    "dotenv": "^17.4.1",
     "invoice-assistant": "file:./invoice-assistant",
     "next": "15.5.14",
-    "pdf-parse": "^1.1.1",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "pdf-parse": "^1.1.4",
+    "pdfjs-dist": "^4.10.38",
+    "pdfmake": "^0.3.7",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-error-boundary": "^6.1.1",
+    "react-hook-form": "^7.72.1",
     "tailwindcss": "^4",
-    "typescript": "5.9.3"
+    "typescript": "5.9",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
-    "@types/node": "20.19.37",
+    "@pdfme/common": "^6.0.6",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.19.39",
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "19.2.14",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.5.14",
     "globals": "^17.4.0",
-    "picocolors": "^1.1.1"
+    "jest": "^30.3.0",
+    "jest-environment-jsdom": "^30.3.0",
+    "picocolors": "^1.1.1",
+    "ts-jest": "^29.4.9"
   }
 }

@@ -15,8 +15,22 @@ export type EditableInvoiceLine = {
 export type InvoiceHeader = {
   supplierName: string;
   supplierIco: string;
+  /** Sídlo dodavatele */
   supplierAddress: string;
+  /** např. Převodem */
+  supplierPaymentMethod: string;
+  /** Popisek typu „Hlavní bankovní spojení“ */
+  supplierBankLabel: string;
+  /** Číslo účtu (např. 123456/0600) */
+  supplierAccountNumber: string;
+  supplierIban: string;
+  supplierSwift: string;
+  /** Název odběratele */
   customerName: string;
+  customerIco: string;
+  customerDic: string;
+  customerReliableVatPayer: boolean;
+  /** Sídlo odběratele */
   customerAddress: string;
   issueDate: string;
   dueDate: string;
@@ -28,7 +42,15 @@ export const emptyHeader = (): InvoiceHeader => ({
   supplierName: "",
   supplierIco: "",
   supplierAddress: "",
+  supplierPaymentMethod: "Převodem",
+  supplierBankLabel: "",
+  supplierAccountNumber: "",
+  supplierIban: "",
+  supplierSwift: "",
   customerName: "",
+  customerIco: "",
+  customerDic: "",
+  customerReliableVatPayer: false,
   customerAddress: "",
   issueDate: new Date().toISOString().slice(0, 10),
   dueDate: "",
@@ -51,6 +73,49 @@ export function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/**
+ * Při úpravě řádku držíme základ (Kč) jako zdroj pravdy pro součty a DPH:
+ * změna l → dopočet Kč/l; změna Kč/l → dopočet l; změna základu → dopočet sazby nebo l.
+ */
+export function patchLineKeepingBaseFromLiters(
+  line: EditableInvoiceLine,
+  liters: number,
+): Partial<EditableInvoiceLine> {
+  if (!Number.isFinite(liters)) return {};
+  const L = liters;
+  if (L > 0 && Number.isFinite(line.baseAmount) && line.baseAmount !== 0) {
+    return { liters: L, rate: round2(line.baseAmount / L) };
+  }
+  return { liters: L };
+}
+
+export function patchLineKeepingBaseFromRate(
+  line: EditableInvoiceLine,
+  rate: number,
+): Partial<EditableInvoiceLine> {
+  if (!Number.isFinite(rate)) return {};
+  const R = rate;
+  if (R > 0 && Number.isFinite(line.baseAmount) && line.baseAmount !== 0) {
+    return { rate: R, liters: round2(line.baseAmount / R) };
+  }
+  return { rate: R };
+}
+
+export function patchLineMoneyPrimary(
+  line: EditableInvoiceLine,
+  baseAmount: number,
+): Partial<EditableInvoiceLine> {
+  if (!Number.isFinite(baseAmount)) return {};
+  const B = baseAmount;
+  if (line.liters > 0) {
+    return { baseAmount: B, rate: round2(B / line.liters) };
+  }
+  if (line.rate > 0) {
+    return { baseAmount: B, liters: round2(B / line.rate) };
+  }
+  return { baseAmount: B };
+}
+
 export function lineVatAmount(base: number, vatPercent: number): number {
   return round2((base * vatPercent) / 100);
 }
@@ -63,6 +128,9 @@ export function formatMoneyCz(n: number): string {
 }
 
 export function formatDateCz(isoDate: string): string {
+  if (typeof isoDate !== "string" || !isoDate.trim()) {
+    return "—";
+  }
   const [y, m, d] = isoDate.split("-").map(Number);
   if (!y || !m || !d) return isoDate;
   return `${d}. ${m}. ${y}`;

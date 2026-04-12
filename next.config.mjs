@@ -9,7 +9,11 @@ const nextConfig = {
   /** Vyhnout se špatnému workspace rootu, když existuje jiný lockfile výš ve stromu. */
   outputFileTracingRoot: path.join(__dirname),
   /** pdf-parse (pdf.js) nesmí balit webpack — jinak padá worker / dev server. */
-  serverExternalPackages: ["pdf-parse"],
+  serverExternalPackages: [
+    "pdf-parse",
+    "@napi-rs/canvas",
+    "pdfjs-dist",
+  ],
 };
 
 export default nextConfig;
