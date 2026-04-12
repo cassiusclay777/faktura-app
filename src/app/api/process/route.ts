@@ -3,7 +3,7 @@ import {
   parseTripText,
   transcribeHandwritingFromBuffer,
   correctTripLineDescriptions,
-  correctTripLineDescriptionsDeepSeek,
+  correctTripLineDescriptionsOpenRouter,
 } from "invoice-assistant";
 import type { VisionProvider } from "invoice-assistant";
 import { extractTextFromPdfBuffer } from "@/lib/extractPdfText";
@@ -37,8 +37,11 @@ export async function POST(req: NextRequest) {
     const provider = (formData.get("provider") as string) || "gemini";
     const fixNames = formData.get("fixNames") === "true";
     const fixNamesWeb = formData.get("fixNamesWeb") === "true";
-    const fixNamesProvider =
+    const rawFixNamesProvider =
       (formData.get("fixNamesProvider") as string) || "gemini";
+    /** Dříve „deepseek“ – nyní OpenRouter (OpenAI-kompatibilní). */
+    const fixNamesProvider =
+      rawFixNamesProvider === "deepseek" ? "openrouter" : rawFixNamesProvider;
     const userInstructions = formData.get("userInstructions")?.toString() || undefined;
 
     let text: string;
@@ -92,21 +95,21 @@ export async function POST(req: NextRequest) {
 
     if (fixNames) {
       let corrected;
-      if (fixNamesProvider === "deepseek") {
-        const key = process.env.DEEPSEEK_API_KEY;
+      if (fixNamesProvider === "openrouter") {
+        const key = process.env.OPENROUTER_API_KEY;
         if (!key?.trim()) {
           return NextResponse.json(
             {
               error:
-                "Pro korekci přes DeepSeek nastav DEEPSEEK_API_KEY v .env (viz .env.example).",
+                "Pro korekci přes OpenRouter nastav OPENROUTER_API_KEY v .env (viz .env.example).",
             },
             { status: 400 },
           );
         }
-        corrected = await correctTripLineDescriptionsDeepSeek(parsed.lines, {
+        corrected = await correctTripLineDescriptionsOpenRouter(parsed.lines, {
           apiKey: key,
-          model: process.env.DEEPSEEK_MODEL,
-          baseUrl: process.env.DEEPSEEK_API_BASE,
+          model: process.env.OPENROUTER_MODEL,
+          baseUrl: process.env.OPENROUTER_API_BASE,
           rawTranscript: text,
           userInstructions,
         });

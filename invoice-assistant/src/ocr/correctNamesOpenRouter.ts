@@ -5,27 +5,27 @@ import {
   mergeCorrectedDescriptions,
 } from "./correctNamesCommon.js";
 
-export type CorrectNamesDeepSeekOptions = {
+export type CorrectNamesOpenRouterOptions = {
   apiKey: string;
-  /** např. deepseek-chat */
+  /** např. openai/gpt-4o-mini nebo deepseek/deepseek-chat */
   model?: string;
-  /** Výchozí OpenAI-kompatibilní endpoint DeepSeek */
+  /** OpenAI-kompatibilní base URL (OpenRouter: https://openrouter.ai/api) */
   baseUrl?: string;
   rawTranscript?: string;
   userInstructions?: string;
 };
 
 /**
- * Korekce názvů přes DeepSeek API (OpenAI-kompatibilní chat).
+ * Korekce názvů přes OpenRouter (OpenAI-kompatibilní chat completions).
  */
-export async function correctTripLineDescriptionsDeepSeek(
+export async function correctTripLineDescriptionsOpenRouter(
   lines: TripLine[],
-  opts: CorrectNamesDeepSeekOptions,
+  opts: CorrectNamesOpenRouterOptions,
 ): Promise<TripLine[]> {
   if (lines.length === 0) return lines;
 
-  const base = (opts.baseUrl ?? "https://api.deepseek.com").replace(/\/$/, "");
-  const model = opts.model ?? "deepseek-chat";
+  const base = (opts.baseUrl ?? "https://openrouter.ai/api").replace(/\/$/, "");
+  const model = opts.model ?? "openai/gpt-4o-mini";
 
   const userPrompt = buildCorrectNamesUserPrompt(lines, {
     useWebSearch: false,
@@ -33,12 +33,19 @@ export async function correctTripLineDescriptionsDeepSeek(
     userInstructions: opts.userInstructions,
   });
 
+  const referer = process.env.OPENROUTER_HTTP_REFERER?.trim();
+  const title = process.env.OPENROUTER_APP_TITLE?.trim();
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${opts.apiKey}`,
+  };
+  if (referer) headers["HTTP-Referer"] = referer;
+  if (title) headers["X-Title"] = title;
+
   const res = await fetch(`${base}/v1/chat/completions`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${opts.apiKey}`,
-    },
+    headers,
     body: JSON.stringify({
       model,
       messages: [{ role: "user", content: userPrompt }],
@@ -49,7 +56,7 @@ export async function correctTripLineDescriptionsDeepSeek(
   if (!res.ok) {
     const errBody = await res.text();
     throw new Error(
-      `DeepSeek API ${res.status}: ${errBody.slice(0, 600)}`,
+      `OpenRouter API ${res.status}: ${errBody.slice(0, 600)}`,
     );
   }
 
@@ -58,7 +65,7 @@ export async function correctTripLineDescriptionsDeepSeek(
   };
   const text = data.choices?.[0]?.message?.content;
   if (!text?.trim()) {
-    throw new Error("DeepSeek (korekce názvů) vrátil prázdnou odpověď.");
+    throw new Error("OpenRouter (korekce názvů) vrátil prázdnou odpověď.");
   }
 
   let parsed: unknown;
@@ -66,7 +73,7 @@ export async function correctTripLineDescriptionsDeepSeek(
     parsed = extractJsonArray(text);
   } catch (e) {
     throw new Error(
-      `Nepodařilo se zparsovat JSON z korekce (DeepSeek): ${(e as Error).message}`,
+      `Nepodařilo se zparsovat JSON z korekce (OpenRouter): ${(e as Error).message}`,
     );
   }
 

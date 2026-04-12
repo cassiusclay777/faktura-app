@@ -38,7 +38,7 @@ export default function FakturaApp() {
   const [provider, setProvider] = useState<"gemini" | "ollama">("gemini");
   const [fixNamesWeb, setFixNamesWeb] = useState(false);
   const [fixNamesProvider, setFixNamesProvider] = useState<
-    "gemini" | "deepseek"
+    "gemini" | "openrouter"
   >("gemini");
   const [userInstructions, setUserInstructions] = useState("");
   const [loading, setLoading] = useState(false);
@@ -459,10 +459,10 @@ export default function FakturaApp() {
                   <input
                     type="radio"
                     name="fixNamesProvider"
-                    checked={fixNamesProvider === "deepseek"}
-                    onChange={() => setFixNamesProvider("deepseek")}
+                    checked={fixNamesProvider === "openrouter"}
+                    onChange={() => setFixNamesProvider("openrouter")}
                   />
-                  DeepSeek
+                  OpenRouter
                 </label>
               </div>
               <div className="grid gap-4 sm:grid-cols-2 mb-4">
@@ -470,7 +470,7 @@ export default function FakturaApp() {
                   <input
                     type="checkbox"
                     checked={fixNamesWeb}
-                    disabled={fixNamesProvider === "deepseek"}
+                    disabled={fixNamesProvider === "openrouter"}
                     onChange={(e) => setFixNamesWeb(e.target.checked)}
                   />
                   Vyhledávat na webu (jen Gemini)
