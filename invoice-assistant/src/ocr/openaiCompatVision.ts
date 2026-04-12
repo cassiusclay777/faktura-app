@@ -51,9 +51,10 @@ function assertOpenAiCompatVisionSupported(baseUrl: string): void {
   }
   if (host === "api.deepseek.com") {
     throw new Error(
-      "Vision OCR: oficiální DeepSeek API (api.deepseek.com) nepodporuje obrázky v chatu — jen text. " +
-        "Nastav DEEPSEEK_VISION_API_BASE na endpoint s vision v OpenAI formátu (např. https://openrouter.ai/api/v1) " +
-        "a DEEPSEEK_VISION_MODEL na multimodální model, použij OPENAI_API_KEY u OpenAI, nebo v aplikaci zvol Ollama s vision modelem.",
+      "Vision OCR: api.deepseek.com je jen text — obrázky v chatu nepodporuje. " +
+        "Nastav DEEPSEEK_VISION_API_BASE=https://openrouter.ai/api/v1 (nebo jiný OpenAI-kompatibilní vision endpoint) a DEEPSEEK_VISION_MODEL / OPENROUTER_VISION_MODEL na multimodální model; " +
+        "nebo použij v .env jen OPENROUTER_API_KEY (bez DEEPSEEK_API_BASE na deepseek.com) — výchozí endpoint je pak OpenRouter. " +
+        "Alternativa: v aplikaci zvol Ollama.",
     );
   }
 }

@@ -5,12 +5,22 @@ function env(name: string): string | undefined {
   return v && v.trim() ? v.trim() : undefined;
 }
 
-function resolveVisionBaseUrl(): string | undefined {
-  return (
-    env("DEEPSEEK_VISION_API_BASE") ??
-    env("DEEPSEEK_API_BASE") ??
-    "https://api.deepseek.com/v1"
-  );
+/**
+ * Vision endpoint: explicitní proměnné mají přednost.
+ * Když je v .env jen OPENROUTER_API_KEY (bez DEEPSEEK_API_BASE), nesmíme padnout
+ * na api.deepseek.com — ten je text-only a openaiCompatVision pak hlásí falešnou chybu.
+ */
+function resolveVisionBaseUrl(): string {
+  const explicit = env("DEEPSEEK_VISION_API_BASE");
+  if (explicit) return explicit;
+  const deepseekBase = env("DEEPSEEK_API_BASE");
+  if (deepseekBase) return deepseekBase;
+  const openrouterKey = env("OPENROUTER_API_KEY");
+  const deepseekKey = env("DEEPSEEK_API_KEY");
+  if (openrouterKey && !deepseekKey) {
+    return env("OPENROUTER_API_BASE") ?? "https://openrouter.ai/api/v1";
+  }
+  return "https://api.deepseek.com/v1";
 }
 
 /** Klíč pro OpenAI-kompatibilní vision endpoint (OpenRouter / OpenAI …). */
@@ -40,13 +50,11 @@ export async function transcribeDeepSeekPathFromImage(
   const base = resolveVisionBaseUrl();
   const apiKey = resolveDeepSeekVisionOcrApiKey();
   const model =
-    env("DEEPSEEK_VISION_MODEL") ?? env("DEEPSEEK_MODEL") ?? "deepseek-chat";
+    env("DEEPSEEK_VISION_MODEL") ??
+    env("OPENROUTER_VISION_MODEL") ??
+    env("DEEPSEEK_MODEL") ??
+    (base.toLowerCase().includes("openrouter") ? "qwen/qwen2.5-vl-72b-instruct" : "deepseek-chat");
 
-  if (!base) {
-    throw new Error(
-      "Pro přepis z fotky s volbou „DeepSeek“ nastav v .env DEEPSEEK_VISION_API_BASE nebo DEEPSEEK_API_BASE.",
-    );
-  }
   if (!apiKey) {
     throw new Error(
       "Chybí API klíč pro vision OCR. Nastav DEEPSEEK_VISION_API_KEY nebo DEEPSEEK_API_KEY (alternativně OPENAI_API_KEY / OPENROUTER_API_KEY).",
