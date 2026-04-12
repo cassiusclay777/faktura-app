@@ -166,7 +166,7 @@ export async function POST(req: NextRequest) {
         } else {
           if (provider === "deepseek" && !hasDeepSeekVisionOcrCredentials()) {
             return apiError(
-              "Skenované PDF: nastav DEEPSEEK_API_KEY (vision přes api.deepseek.com) nebo použij Ollama s vision modelem.",
+              "Skenované PDF bez textu: pro OCR při volbě DeepSeek chybí vision — nastav OPENROUTER_API_KEY nebo DEEPSEEK_VISION_API_KEY / DEEPSEEK_API_KEY / OPENAI_API_KEY a DEEPSEEK_VISION_API_BASE na OpenAI-kompatibilní multimodální endpoint (např. https://openrouter.ai/api/v1). Oficiální api.deepseek.com je jen text. Nebo použij Ollama s vision modelem.",
               400
             );
           }
@@ -191,7 +191,7 @@ export async function POST(req: NextRequest) {
       } else if (isImageMime(file.type)) {
         if (provider === "deepseek" && !hasDeepSeekVisionOcrCredentials()) {
           return apiError(
-            "Foto podkladu: nastav DEEPSEEK_API_KEY (vision přes api.deepseek.com) nebo použij Ollama s vision modelem.",
+            "Foto podkladu: pro OCR při volbě DeepSeek chybí vision — nastav OPENROUTER_API_KEY nebo DEEPSEEK_VISION_API_KEY / DEEPSEEK_API_KEY / OPENAI_API_KEY a DEEPSEEK_VISION_API_BASE na multimodální endpoint (např. OpenRouter). api.deepseek.com neumí obrázky. Nebo použij Ollama s vision modelem.",
             400
           );
         }

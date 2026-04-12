@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json(
             {
               error:
-                "Skenované PDF s DeepSeek: nastav DEEPSEEK_API_KEY pro vision OCR (api.deepseek.com).",
+                "Skenované PDF s DeepSeek bez textové vrstvy: chybí vision OCR — nastav OPENROUTER_API_KEY nebo DEEPSEEK_VISION_API_KEY / DEEPSEEK_API_KEY a DEEPSEEK_VISION_API_BASE (např. https://openrouter.ai/api/v1). api.deepseek.com je jen text. Nebo Ollama.",
             },
             { status: 400 },
           );
@@ -148,6 +148,15 @@ export async function POST(req: NextRequest) {
         });
       }
     } else if (isImageMime(file.type)) {
+      if (provider === "deepseek" && !hasDeepSeekVisionOcrCredentials()) {
+        return NextResponse.json(
+          {
+            error:
+              "Obrázek s DeepSeek: chybí vision OCR — nastav OPENROUTER_API_KEY nebo DEEPSEEK_VISION_API_KEY / DEEPSEEK_API_KEY a DEEPSEEK_VISION_API_BASE (např. OpenRouter). api.deepseek.com je jen text. Nebo Ollama.",
+          },
+          { status: 400 },
+        );
+      }
       text = await transcribeHandwritingFromBuffer({
         buffer: buf,
         mimeType: file.type,
