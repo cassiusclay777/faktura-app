@@ -1,6 +1,10 @@
-import { loadServerEnv } from "@/lib/loadEnv";
-
-/** Načte `.env` / `.env.local` dřív než API routy – Gemini i DeepSeek čtou `process.env` z těchto souborů. */
+/**
+ * Intentionally no-op.
+ * `.env` values are loaded lazily inside API routes via `loadServerEnv()`.
+ *
+ * This avoids Webpack trying to bundle Node-only dotenv/fs/path modules
+ * through instrumentation in some local Windows setups.
+ */
 export function register() {
-  loadServerEnv();
+  // no-op
 }
