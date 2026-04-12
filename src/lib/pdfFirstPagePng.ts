@@ -16,7 +16,14 @@ export async function renderPdfFirstPageToPngBuffer(
   });
   const pdf = await loadingTask.promise;
   const page = await pdf.getPage(1);
-  const scale = 2;
+  /** Nižší rozlišení = rychlejší OCR; max ~1600 px delší strany při scale 2. */
+  const baseScale = 2;
+  const vp1 = page.getViewport({ scale: 1 });
+  const maxPx = 1600;
+  const scale = Math.min(
+    baseScale,
+    maxPx / Math.max(vp1.width, vp1.height),
+  );
   const viewport = page.getViewport({ scale });
   const w = Math.max(1, Math.floor(viewport.width));
   const h = Math.max(1, Math.floor(viewport.height));

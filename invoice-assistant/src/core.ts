@@ -2,6 +2,11 @@
  * Veřejné API pro import z jiných balíčků (např. Next.js faktura-app).
  */
 export { parseTripText } from "./parseTripText.js";
+export {
+  parsePodkladUnified,
+  type ParsePodkladUnifiedResult,
+  type PodkladParseFormat,
+} from "./parsePodkladUnified.js";
 export type { ParsedPodklad, TripLine } from "./types.js";
 export {
   transcribeHandwriting,

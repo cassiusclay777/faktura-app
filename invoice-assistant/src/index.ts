@@ -5,6 +5,7 @@ import { transcribeHandwriting } from "./ocr/visionTranscribe.js";
 import type { VisionProvider } from "./ocr/visionTranscribe.js";
 import { isProbablyImagePath } from "./ocr/imageFile.js";
 import { correctTripLineDescriptionsDeepSeek } from "./ocr/correctNamesDeepSeek.js";
+import { parseWithDeepSeekReasoner } from "./ocr/parseWithDeepSeekReasoner.js";
 import type { TripLine } from "./types.js";
 
 function parseArgs(argv: string[]): {
@@ -12,10 +13,12 @@ function parseArgs(argv: string[]): {
   provider: VisionProvider | null;
   fixNames: boolean;
   fixNamesWeb: boolean;
+  useReasoner: boolean;
 } {
   let provider: VisionProvider | null = null;
   let fixNames = false;
   let fixNamesWeb = false;
+  let useReasoner = false;
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -36,6 +39,10 @@ function parseArgs(argv: string[]): {
       fixNamesWeb = true;
       continue;
     }
+    if (a === "--reasoner") {
+      useReasoner = true;
+      continue;
+    }
     if (a === "--provider" && argv[i + 1]) {
       const p = argv[++i];
       if (p !== "ollama" && p !== "deepseek") {
@@ -50,7 +57,7 @@ function parseArgs(argv: string[]): {
   if (!filePath) {
     throw new Error("Chybí cesta k souboru.");
   }
-  return { filePath, provider, fixNames, fixNamesWeb };
+  return { filePath, provider, fixNames, fixNamesWeb, useReasoner };
 }
 
 function defaultProviderFromEnv(): VisionProvider | null {
@@ -106,7 +113,7 @@ async function main() {
     process.exit(0);
   }
 
-  const { filePath, provider, fixNames, fixNamesWeb } = parseArgs(argv);
+  const { filePath, provider, fixNames, fixNamesWeb, useReasoner } = parseArgs(argv);
 
   const useImage =
     isProbablyImagePath(filePath) ||
@@ -131,7 +138,26 @@ async function main() {
     raw = readFileSync(filePath, "utf8");
   }
 
-  let result = parseTripText(raw);
+  let result;
+  
+  if (useReasoner) {
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey?.trim()) {
+      console.error("Pro --reasoner nastav DEEPSEEK_API_KEY v .env.");
+      process.exit(1);
+    }
+    console.error("--- Používám DeepSeek Reasoner ---\n");
+    result = await parseWithDeepSeekReasoner({
+      apiKey: apiKey.trim(),
+      model: "deepseek-reasoner",
+      baseUrl: process.env.DEEPSEEK_API_BASE,
+      rawText: raw,
+      verbose: true,
+      reasoningEffort: "high",
+    });
+  } else {
+    result = parseTripText(raw);
+  }
 
   if (fixNames) {
     const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -200,6 +226,10 @@ Volitelně: VISION_PROVIDER=ollama|deepseek v .env
     npx tsx src/index.ts --fix-names podklad.txt
     npx tsx src/index.ts podklad.txt --fix-names-web
   (--fix-names-web = nástroj web_search přes DuckDuckGo v CLI)
+
+  DeepSeek Reasoner (AI parsování složitých podkladů):
+    npx tsx src/index.ts --reasoner podklad.txt
+  (použije deepseek-reasoner model, který "přemýšlí" a je přesnější)
 `);
 }
 

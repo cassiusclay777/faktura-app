@@ -73,6 +73,8 @@ export interface UseInvoiceStateReturn {
   correcting: boolean;
   showCorrection: boolean;
   idokladExportHint: string | null;
+  /** Informace po načtení PDF / textu (formát parseru, prázdné řádky) */
+  podkladNotice: string | null;
   historyItems: SavedInvoice[];
   saveInvoiceLabel: string;
   aresLoading: "supplier" | "customer" | null;
@@ -97,6 +99,7 @@ export interface UseInvoiceStateReturn {
   setCorrecting: (correcting: boolean) => void;
   setShowCorrection: (show: boolean) => void;
   setIdokladExportHint: (hint: string | null) => void;
+  setPodkladNotice: (notice: string | null) => void;
   setSaveInvoiceLabel: (label: string) => void;
   setAresLoading: (loading: "supplier" | "customer" | null) => void;
   setTemplateLoading: (loading: boolean) => void;
@@ -108,7 +111,11 @@ export interface UseInvoiceStateReturn {
   handleClearHistory: () => void;
   refreshHistory: () => void;
   openIdokladCreate: () => void;
-  handleParsedPodklad: (parsed: ParsedPodklad, rawText: string) => void;
+  handleParsedPodklad: (
+    parsed: ParsedPodklad,
+    rawText: string,
+    notice?: string | null,
+  ) => void;
   updateLine: (id: string, updates: Partial<EditableInvoiceLine>) => void;
   removeLine: (id: string) => void;
   addLine: () => void;
@@ -136,6 +143,7 @@ export function useInvoiceState(): UseInvoiceStateReturn {
   const [correcting, setCorrecting] = useState(false);
   const [showCorrection, setShowCorrection] = useState(false);
   const [idokladExportHint, setIdokladExportHint] = useState<string | null>(null);
+  const [podkladNotice, setPodkladNotice] = useState<string | null>(null);
   const [historyItems, setHistoryItems] = useState<SavedInvoice[]>([]);
   const [saveInvoiceLabel, setSaveInvoiceLabel] = useState("");
   const [aresLoading, setAresLoading] = useState<"supplier" | "customer" | null>(null);
@@ -218,14 +226,18 @@ export function useInvoiceState(): UseInvoiceStateReturn {
   }, []);
 
   // Line management
-  const handleParsedPodklad = useCallback((parsed: ParsedPodklad, rawText: string) => {
-    const editable = tripLinesToEditable(parsed.lines);
-    setLines(editable);
-    setOriginalLines(editable);
-    setRawTranscript(rawText);
-    setTab("faktura");
-    setIdokladExportHint(null);
-  }, []);
+  const handleParsedPodklad = useCallback(
+    (parsed: ParsedPodklad, rawText: string, notice?: string | null) => {
+      const editable = tripLinesToEditable(parsed.lines);
+      setLines(editable);
+      setOriginalLines(editable);
+      setRawTranscript(rawText);
+      setTab("faktura");
+      setIdokladExportHint(null);
+      setPodkladNotice(notice ?? null);
+    },
+    [],
+  );
 
   const updateLine = useCallback((id: string, updates: Partial<EditableInvoiceLine>) => {
     setLines((prev) =>
@@ -258,6 +270,7 @@ export function useInvoiceState(): UseInvoiceStateReturn {
     setOriginalLines([]);
     setError(null);
     setIdokladExportHint(null);
+    setPodkladNotice(null);
   }, []);
 
   // Header hints extraction
@@ -284,6 +297,7 @@ export function useInvoiceState(): UseInvoiceStateReturn {
     correcting,
     showCorrection,
     idokladExportHint,
+    podkladNotice,
     historyItems,
     saveInvoiceLabel,
     aresLoading,
@@ -308,6 +322,7 @@ export function useInvoiceState(): UseInvoiceStateReturn {
     setCorrecting,
     setShowCorrection,
     setIdokladExportHint,
+    setPodkladNotice,
     setSaveInvoiceLabel,
     setAresLoading,
     setTemplateLoading,

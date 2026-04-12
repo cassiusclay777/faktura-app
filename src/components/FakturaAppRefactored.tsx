@@ -1,7 +1,7 @@
 "use client";
 
 import React, { Suspense } from "react";
-import type { ParsedPodklad } from "invoice-assistant";
+import type { ParsedPodklad, PodkladParseFormat } from "invoice-assistant";
 import { formatUnknownError } from "@/lib/formatUnknownError";
 import { buildIdokladExportText } from "@/lib/idokladExport";
 import { tripLinesToEditable } from "@/lib/invoice";
@@ -15,7 +15,22 @@ import { ApiCallStatus, ProcessingState } from "@/components/LoadingState";
 interface ProcessApiResponse {
   rawTranscript?: string;
   parsed: ParsedPodklad;
+  parseFormat?: PodkladParseFormat;
   error?: string;
+}
+
+function podkladNoticeFromParse(
+  parseFormat: PodkladParseFormat | undefined,
+  lineCount: number,
+  rawLen: number,
+): string | null {
+  if (parseFormat === "invoice_loose" && lineCount > 0) {
+    return "Řádky jsme odvodili z tabulkového textu PDF (typicky iDoklad). Zkontroluj základy a popisy — jde o heuristiku, ne o účetní přesnost.";
+  }
+  if (lineCount === 0 && rawLen > 120) {
+    return "Z dokumentu se nepodařilo vyčíst řádky faktury (očekává se buď ruční podklad „datum + litry/sazba/základ“, nebo tabulka s částkami jako u iDokladu). Zkus jiný soubor nebo vlož text ručně.";
+  }
+  return null;
 }
 
 interface AresApiResponse {
@@ -42,6 +57,7 @@ export default function FakturaAppRefactored() {
     correcting,
     showCorrection,
     idokladExportHint,
+    podkladNotice,
     historyItems,
     saveInvoiceLabel,
     aresLoading,
@@ -63,6 +79,7 @@ export default function FakturaAppRefactored() {
     setCorrecting,
     setShowCorrection,
     setIdokladExportHint,
+    setPodkladNotice,
     setSaveInvoiceLabel,
     setAresLoading,
 
@@ -84,7 +101,8 @@ export default function FakturaAppRefactored() {
   const handleFileUpload = async (file: File) => {
     setLoading(true);
     setError(null);
-    
+    setPodkladNotice(null);
+
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -107,11 +125,20 @@ export default function FakturaAppRefactored() {
         throw new Error(result.error || `HTTP ${response.status}`);
       }
 
-      handleParsedPodklad(result.parsed, result.rawTranscript || "");
-      
+      const raw = result.rawTranscript || "";
+      handleParsedPodklad(
+        result.parsed,
+        raw,
+        podkladNoticeFromParse(
+          result.parseFormat,
+          result.parsed.lines.length,
+          raw.length,
+        ),
+      );
+
       // Extract header hints from raw text
-      if (result.rawTranscript) {
-        extractHeaderHints(result.rawTranscript);
+      if (raw) {
+        extractHeaderHints(raw);
       }
     } catch (err) {
       setError(formatUnknownError(err));
@@ -129,7 +156,8 @@ export default function FakturaAppRefactored() {
 
     setLoading(true);
     setError(null);
-    
+    setPodkladNotice(null);
+
     try {
       const response = await fetch("/api/process", {
         method: "POST",
@@ -152,8 +180,16 @@ export default function FakturaAppRefactored() {
         throw new Error(result.error || `HTTP ${response.status}`);
       }
 
-      handleParsedPodklad(result.parsed, pasteText);
-      
+      handleParsedPodklad(
+        result.parsed,
+        pasteText,
+        podkladNoticeFromParse(
+          result.parseFormat,
+          result.parsed.lines.length,
+          pasteText.length,
+        ),
+      );
+
       // Extract header hints from pasted text
       extractHeaderHints(pasteText);
     } catch (err) {
@@ -361,6 +397,19 @@ export default function FakturaAppRefactored() {
               error={error}
               inline={false}
             />
+          </div>
+        )}
+
+        {podkladNotice && (
+          <div className="mb-6 flex flex-wrap items-start gap-2 rounded-lg border border-amber-500/35 bg-amber-950/35 px-4 py-3 text-sm text-amber-100/95">
+            <span className="min-w-0 flex-1">{podkladNotice}</span>
+            <button
+              type="button"
+              className="shrink-0 text-amber-400/90 underline decoration-amber-500/50 hover:text-amber-300"
+              onClick={() => setPodkladNotice(null)}
+            >
+              Zavřít
+            </button>
           </div>
         )}
         

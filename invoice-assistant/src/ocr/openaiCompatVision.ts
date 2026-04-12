@@ -38,12 +38,34 @@ function resolveMaxTokens(): number {
 }
 
 /**
+ * Oficiální DeepSeek chat API je text-only — neumí OpenAI formát s `image_url`
+ * (server vrací 400: unknown variant `image_url`, expected `text`).
+ */
+function assertOpenAiCompatVisionSupported(baseUrl: string): void {
+  let host: string;
+  try {
+    const u = baseUrl.trim();
+    host = new URL(u.includes("://") ? u : `https://${u}`).hostname.toLowerCase();
+  } catch {
+    return;
+  }
+  if (host === "api.deepseek.com") {
+    throw new Error(
+      "Vision OCR: oficiální DeepSeek API (api.deepseek.com) nepodporuje obrázky v chatu — jen text. " +
+        "Nastav DEEPSEEK_VISION_API_BASE na endpoint s vision v OpenAI formátu (např. https://openrouter.ai/api/v1) " +
+        "a DEEPSEEK_VISION_MODEL na multimodální model, použij OPENAI_API_KEY u OpenAI, nebo v aplikaci zvol Ollama s vision modelem.",
+    );
+  }
+}
+
+/**
  * Přepis z obrázku přes OpenAI-kompatibilní chat (image_url + text).
  * Použití: OpenRouter, OpenAI, Azure OpenAI (správný baseUrl), apod.
  */
 export async function transcribeWithOpenAICompatVision(
   opts: OpenAICompatVisionOptions,
 ): Promise<string> {
+  assertOpenAiCompatVisionSupported(opts.baseUrl);
   const base = opts.baseUrl.replace(/\/$/, "");
   const url = `${base}/chat/completions`;
   const mime = opts.mimeType.split(";")[0]?.trim() ?? "image/jpeg";

@@ -1,9 +1,11 @@
 import { NextRequest } from "next/server";
 import {
-  parseTripText,
+  parsePodkladUnified,
   transcribeHandwritingFromBuffer,
   correctTripLineDescriptionsDeepSeek,
   hasDeepSeekVisionOcrCredentials,
+  type ParsedPodklad,
+  type PodkladParseFormat,
 } from "invoice-assistant";
 import { extractTextFromPdfBuffer } from "@/lib/extractPdfText";
 import { loadServerEnv } from "@/lib/loadEnv";
@@ -32,10 +34,40 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Message + nested Error.cause (fetch/network errors often hide in cause). */
+function aggregateErrorText(e: unknown): string {
+  const parts: string[] = [];
+  let cur: unknown = e;
+  let depth = 0;
+  while (cur != null && depth < 8) {
+    if (cur instanceof Error) {
+      parts.push(cur.message);
+      cur = cur.cause;
+    } else {
+      parts.push(String(cur));
+      break;
+    }
+    depth += 1;
+  }
+  return parts.join(" | ");
+}
+
 function isRetryableAiError(e: unknown): boolean {
-  const message = e instanceof Error ? e.message : String(e);
-  const normalized = message.toLowerCase();
+  const normalized = aggregateErrorText(e).toLowerCase();
+  const visionHttp =
+    normalized.includes("vision ocr") &&
+    (/\(\s*429\s*\)/.test(normalized) ||
+      /\(\s*502\s*\)/.test(normalized) ||
+      /\(\s*503\s*\)/.test(normalized) ||
+      /\(\s*504\s*\)/.test(normalized) ||
+      /\(\s*524\s*\)/.test(normalized));
+  /** Ollama vrací např. "Ollama 502: ..." při dočasném výpadku / proxy. */
+  const ollamaHttp =
+    normalized.includes("ollama") &&
+    /\bollama\s+50[234]\b/.test(normalized);
   return (
+    visionHttp ||
+    ollamaHttp ||
     normalized.includes("429") ||
     normalized.includes("retry in") ||
     normalized.includes("rate limit") ||
@@ -43,10 +75,21 @@ function isRetryableAiError(e: unknown): boolean {
     normalized.includes("503") ||
     normalized.includes("service unavailable") ||
     normalized.includes("high demand") ||
-    (normalized.includes("vision ocr") &&
-      (normalized.includes("429") ||
-        normalized.includes("502") ||
-        normalized.includes("503")))
+    normalized.includes("bad gateway") ||
+    normalized.includes("gateway time-out") ||
+    normalized.includes("gateway timeout") ||
+    // Transient network (Node fetch, undici, Ollama local)
+    normalized.includes("fetch failed") ||
+    normalized.includes("econnreset") ||
+    normalized.includes("econnrefused") ||
+    normalized.includes("etimedout") ||
+    normalized.includes("enetunreach") ||
+    normalized.includes("eai_again") ||
+    normalized.includes("socket hang up") ||
+    normalized.includes("premature close") ||
+    normalized.includes("aborted") ||
+    normalized.includes("und_err") ||
+    normalized.includes("other side closed")
   );
 }
 
@@ -137,20 +180,13 @@ export async function POST(req: NextRequest) {
             vMime = "image/png";
           }
 
-          text =
-            provider === "deepseek"
-              ? await retryTransient(() =>
-                  transcribeHandwritingFromBuffer({
-                    buffer: vBuf,
-                    mimeType: vMime,
-                    provider,
-                  }),
-                )
-              : await transcribeHandwritingFromBuffer({
-                  buffer: vBuf,
-                  mimeType: vMime,
-                  provider,
-                });
+          text = await retryTransient(() =>
+            transcribeHandwritingFromBuffer({
+              buffer: vBuf,
+              mimeType: vMime,
+              provider,
+            }),
+          );
         }
       } else if (isImageMime(file.type)) {
         if (provider === "deepseek" && !hasDeepSeekVisionOcrCredentials()) {
@@ -159,20 +195,13 @@ export async function POST(req: NextRequest) {
             400
           );
         }
-        text =
-          provider === "deepseek"
-            ? await retryTransient(() =>
-                transcribeHandwritingFromBuffer({
-                  buffer: buf,
-                  mimeType: file.type,
-                  provider,
-                }),
-              )
-            : await transcribeHandwritingFromBuffer({
-                buffer: buf,
-                mimeType: file.type,
-                provider,
-              });
+        text = await retryTransient(() =>
+          transcribeHandwritingFromBuffer({
+            buffer: buf,
+            mimeType: file.type,
+            provider,
+          }),
+        );
       } else {
         return apiError("Nepodporovaný typ souboru.", 400);
       }
@@ -182,7 +211,15 @@ export async function POST(req: NextRequest) {
       return apiError("Vlož text podkladu nebo nahraj soubor.", 400);
     }
 
-    let parsed = parseTripText(text);
+    let parsed: ParsedPodklad;
+    let parseFormat: PodkladParseFormat = "empty";
+    try {
+      const unified = parsePodkladUnified(text);
+      parsed = unified.parsed;
+      parseFormat = unified.format;
+    } catch (parseErr) {
+      return apiError(aggregateErrorText(parseErr), 422);
+    }
 
     if (fixNames) {
       const key = process.env.DEEPSEEK_API_KEY;
@@ -214,12 +251,15 @@ export async function POST(req: NextRequest) {
       };
     }
 
-    return apiResponse({ rawTranscript: text, parsed });
+    return apiResponse({ rawTranscript: text, parsed, parseFormat });
   } catch (e) {
     if (e instanceof ValidationError) {
       return createValidationErrorResponse(e);
     }
-    const message = e instanceof Error ? e.message : String(e);
+    const message = aggregateErrorText(e);
+    if (process.env.NODE_ENV === "development") {
+      console.error("[api/process]", message);
+    }
     if (isRetryableAiError(e)) {
       return apiError(
         "AI služba je dočasně přetížená nebo limitovaná (429/503). Zkus to za pár sekund.",

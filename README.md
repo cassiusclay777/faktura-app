@@ -35,7 +35,7 @@ Otevři [http://localhost:3000](http://localhost:3000).
 ## Konfigurace
 
 - **Textový podklad (.txt nebo vložený text)** – API klíče nepotřebuješ.
-- **PDF** – nejdřív se čte textová vrstva (bez klíče). Je-li to sken bez textu, použije se **DeepSeek vision** (`DEEPSEEK_API_KEY`) nebo **Ollama** (první stránka jako obrázek); bez klíče DeepSeek u skenu přejdi na PNG/JPEG nebo doplň `.env` podle `.env.example`.
+- **PDF** – nejdřív se čte textová vrstva (bez klíče). Je-li to sken bez textu, použije se **Ollama** (první stránka jako obrázek) nebo **jiný OpenAI-kompatibilní vision endpoint** (`DEEPSEEK_VISION_API_BASE` + model, typicky OpenRouter — viz `.env.example`). Samotné **api.deepseek.com je jen text**, OCR z obrázku přes ně nejde.
 - **Foto podkladu** – **`DEEPSEEK_API_KEY`** (cloud) nebo lokální **Ollama** + `OLLAMA_VISION_MODEL`.
 - **Korekce názvů** – **`DEEPSEEK_API_KEY`**, model default `deepseek-chat`. „Vyhledávat na webu“ používá nástroj `web_search`; volitelně **`PERPLEXITY_API_KEY`** (Sonar) a/nebo **`TAVILY_API_KEY`**; případně `DEEPSEEK_WEB_SEARCH_PROVIDER=perplexity|tavily` (viz `.env.example`).
 

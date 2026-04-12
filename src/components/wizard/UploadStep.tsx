@@ -53,13 +53,13 @@ export default function UploadStep({
           onChange={(e) => onPasteTextChange(e.target.value)}
           rows={12}
           className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
-          placeholder="Datum na řádek, popis, pak řádek 31999 / 0,13 / 4 159,87 …"
+          placeholder="Ruční podklad: datum na řádek, popis, pak 31999 / 0,13 / 4 159,87 … — PDF z iDokladu lze taky nahrát (načte se textová tabulka)."
         />
       </label>
 
       <div className="space-y-2">
         <span className="text-sm text-zinc-400">
-          Nebo přetáhni / klikni pro soubor (.txt, PDF, obrázek)
+          Nebo přetáhni / klikni (.txt, PDF s textem nebo sken, obrázek)
         </span>
         <DropZone
           onFile={handleFileSelected}
