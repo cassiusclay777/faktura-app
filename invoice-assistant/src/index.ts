@@ -6,6 +6,7 @@ import type { VisionProvider } from "./ocr/visionTranscribe.js";
 import { isProbablyImagePath } from "./ocr/imageFile.js";
 import { correctTripLineDescriptionsDeepSeek } from "./ocr/correctNamesDeepSeek.js";
 import { parseWithDeepSeekReasoner } from "./ocr/parseWithDeepSeekReasoner.js";
+import { transcribeWithOpenRouter } from "./ocr/openrouterVision.js";
 import type { TripLine } from "./types.js";
 
 function parseArgs(argv: string[]): {
@@ -14,11 +15,13 @@ function parseArgs(argv: string[]): {
   fixNames: boolean;
   fixNamesWeb: boolean;
   useReasoner: boolean;
+  useOpenRouter: boolean;
 } {
   let provider: VisionProvider | null = null;
   let fixNames = false;
   let fixNamesWeb = false;
   let useReasoner = false;
+  let useOpenRouter = false;
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -43,6 +46,10 @@ function parseArgs(argv: string[]): {
       useReasoner = true;
       continue;
     }
+    if (a === "--openrouter") {
+      useOpenRouter = true;
+      continue;
+    }
     if (a === "--provider" && argv[i + 1]) {
       const p = argv[++i];
       if (p !== "ollama" && p !== "deepseek") {
@@ -57,7 +64,7 @@ function parseArgs(argv: string[]): {
   if (!filePath) {
     throw new Error("Chybí cesta k souboru.");
   }
-  return { filePath, provider, fixNames, fixNamesWeb, useReasoner };
+  return { filePath, provider, fixNames, fixNamesWeb, useReasoner, useOpenRouter };
 }
 
 function defaultProviderFromEnv(): VisionProvider | null {
@@ -113,27 +120,51 @@ async function main() {
     process.exit(0);
   }
 
-  const { filePath, provider, fixNames, fixNamesWeb, useReasoner } = parseArgs(argv);
+  const { filePath, provider, fixNames, fixNamesWeb, useReasoner, useOpenRouter } =
+    parseArgs(argv);
 
   const useImage =
     isProbablyImagePath(filePath) ||
     provider !== null ||
-    defaultProviderFromEnv() !== null;
+    defaultProviderFromEnv() !== null ||
+    useOpenRouter;
 
   let raw: string;
 
   if (useImage && isProbablyImagePath(filePath)) {
-    const p = provider ?? defaultProviderFromEnv() ?? inferProviderFromEnv();
-    if (!p) {
-      console.error(
-        "Pro obrázek nastav --ollama | --deepseek nebo VISION_PROVIDER=ollama|deepseek",
-      );
-      process.exit(1);
+    if (useOpenRouter) {
+      const apiKey = process.env.OPENROUTER_API_KEY;
+      if (!apiKey?.trim()) {
+        console.error("Pro --openrouter nastav OPENROUTER_API_KEY v .env.");
+        process.exit(1);
+      }
+      console.error("--- Používám OpenRouter s Qwen VL ---\n");
+      raw = await transcribeWithOpenRouter({
+        apiKey: apiKey.trim(),
+        imagePath: filePath,
+        model:
+          process.env.OPENROUTER_VISION_MODEL ?? "qwen/qwen2.5-vl-72b-instruct",
+        baseUrl: process.env.OPENROUTER_API_BASE,
+        httpReferer: process.env.OPENROUTER_HTTP_REFERER,
+        appTitle: process.env.OPENROUTER_APP_TITLE,
+        verbose: true,
+      });
+      console.error("--- Přepis (raw) ---\n");
+      console.error(raw);
+      console.error("\n--- Parsovaná data ---\n");
+    } else {
+      const p = provider ?? defaultProviderFromEnv() ?? inferProviderFromEnv();
+      if (!p) {
+        console.error(
+          "Pro obrázek nastav --ollama | --deepseek nebo VISION_PROVIDER=ollama|deepseek, nebo použij --openrouter",
+        );
+        process.exit(1);
+      }
+      raw = await transcribeHandwriting({ imagePath: filePath, provider: p });
+      console.error("--- Přepis (raw) ---\n");
+      console.error(raw);
+      console.error("\n--- Parsovaná data ---\n");
     }
-    raw = await transcribeHandwriting({ imagePath: filePath, provider: p });
-    console.error("--- Přepis (raw) ---\n");
-    console.error(raw);
-    console.error("\n--- Parsovaná data ---\n");
   } else {
     raw = readFileSync(filePath, "utf8");
   }
@@ -230,6 +261,10 @@ Volitelně: VISION_PROVIDER=ollama|deepseek v .env
   DeepSeek Reasoner (AI parsování složitých podkladů):
     npx tsx src/index.ts --reasoner podklad.txt
   (použije deepseek-reasoner model, který "přemýšlí" a je přesnější)
+
+  OCR přes OpenRouter (Qwen VL, nastav OPENROUTER_API_KEY):
+    npx tsx src/index.ts --openrouter faktura.jpg
+    npx tsx src/index.ts --openrouter --reasoner faktura.jpg
 `);
 }
 

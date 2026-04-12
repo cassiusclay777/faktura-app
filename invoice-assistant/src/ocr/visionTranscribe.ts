@@ -1,13 +1,14 @@
 import { loadImageAsBase64, loadImageBufferAsBase64 } from "./imageFile.js";
 import { transcribeWithOllama } from "./ollamaVision.js";
 import { transcribeDeepSeekPathFromImage } from "./deepseekVisionOcr.js";
+import { transcribeWithOpenRouter } from "./openrouterVision.js";
 
 export {
   hasDeepSeekVisionOcrCredentials,
   resolveDeepSeekVisionOcrApiKey,
 } from "./deepseekVisionOcr.js";
 
-export type VisionProvider = "ollama" | "deepseek";
+export type VisionProvider = "ollama" | "deepseek" | "openrouter";
 
 export type TranscribeOptions = {
   imagePath: string;
@@ -46,6 +47,18 @@ async function transcribeWithProvider(
 
   if (provider === "deepseek") {
     return transcribeDeepSeekPathFromImage(mimeType, base64);
+  }
+
+  if (provider === "openrouter") {
+    const apiKey = env("OPENROUTER_API_KEY");
+    if (!apiKey) {
+      throw new Error("Pro OpenRouter nastav OPENROUTER_API_KEY v .env.");
+    }
+    // Pro OpenRouter potřebujeme cestu k souboru, ne base64
+    // Tohle je dočasné řešení - v reálu bychom měli předat cestu
+    throw new Error(
+      "OpenRouter provider vyžaduje cestu k souboru. Použij --openrouter s cestou k obrázku."
+    );
   }
 
   const model = env("OLLAMA_VISION_MODEL");
